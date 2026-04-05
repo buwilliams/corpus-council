@@ -38,6 +38,9 @@ packages = ["src/corpus_council"]
 [tool.pytest.ini_options]
 addopts = ""
 testpaths = ["tests"]
+markers = [
+    "llm: marks tests that make real LLM API calls (deselect with '-m \"not llm\"')",
+]
 
 [tool.mypy]
 strict = true
