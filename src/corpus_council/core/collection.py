@@ -285,7 +285,12 @@ def get_collection_status(
     store: FileStore,
 ) -> dict[str, Any]:
     """Return session.json and collected.json merged for API response."""
-    session_data = store.read_json(store.collection_session_path(user_id, session_id))
+    session_path = store.collection_session_path(user_id, session_id)
+    if not session_path.exists():
+        raise FileNotFoundError(
+            f"Session not found: user={user_id!r}, session_id={session_id!r}"
+        )
+    session_data = store.read_json(session_path)
     collected = store.read_json(store.collection_collected_path(user_id, session_id))
     return {**session_data, "collected": collected}
 
