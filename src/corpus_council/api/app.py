@@ -1,0 +1,44 @@
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+
+from corpus_council.core.config import load_config
+from corpus_council.core.llm import LLMClient
+from corpus_council.core.store import FileStore
+
+app = FastAPI(title="Corpus Council")
+
+config = load_config(Path("config.yaml"))
+store = FileStore(config.data_dir)
+llm = LLMClient(config)
+
+from corpus_council.api.routers import collection, conversation, corpus  # noqa: E402
+
+app.include_router(conversation.router)
+app.include_router(collection.router)
+app.include_router(corpus.router)
+
+
+@app.exception_handler(FileNotFoundError)
+async def file_not_found_handler(
+    request: Request, exc: FileNotFoundError
+) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"error": "Resource not found"})
+
+
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
+    return JSONResponse(status_code=422, content={"error": str(exc)})
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    print(f"Internal server error: {exc}", file=sys.stderr)
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
+
+
+__all__ = ["app", "config", "store", "llm"]
