@@ -62,11 +62,11 @@ Each verification item falls into one of three categories:
 **Assertion** — a structural check about what exists or what a file contains. Use Read, Grep, Glob, or LSP.
 
 Examples:
-- "File `src/users/create.ts` exists" → use Glob to check
-- "`src/users/create.ts` exports function `createUser`" → use Grep to search for `export.*createUser`
-- "`src/users/create.ts` contains no references to `oldApi`" → use Grep
-- "No `@ts-ignore` in `src/`" → use Grep recursively
-- "Function `createUser` has a JSDoc comment" → use Read and look for `/**` before the function
+- "File `src/corpus_council/core/users.py` exists" → use Glob to check
+- "`src/corpus_council/core/users.py` defines function `create_user`" → use Grep to search for `def create_user`
+- "`src/corpus_council/core/users.py` contains no references to `old_api`" → use Grep
+- "No `type: ignore` in `src/`" → use Grep recursively
+- "Function `create_user` has a docstring" → use Read and look for `"""` after the function definition
 
 **Command** — a behavioral check that requires running a shell command. Use Bash.
 
