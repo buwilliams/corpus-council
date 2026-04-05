@@ -1,0 +1,21 @@
+# API keys are not stored here — use environment variables (ANTHROPIC_API_KEY, etc.)
+
+llm:
+  provider: anthropic
+  model: claude-3-5-haiku-20241022
+
+embedding:
+  provider: sentence-transformers
+  model: all-MiniLM-L6-v2
+
+data_dir: data
+corpus_dir: corpus
+council_dir: council
+templates_dir: templates
+plans_dir: plans
+
+chunking:
+  max_size: 512
+
+retrieval:
+  top_k: 5
