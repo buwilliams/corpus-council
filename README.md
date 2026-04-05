@@ -23,33 +23,35 @@ export ANTHROPIC_API_KEY=your_key_here
 # Edit config.yaml to configure providers, models, and paths
 
 # Ingest and embed the corpus
-corpus-council ingest corpus/
-corpus-council embed
+uv run corpus-council ingest corpus/
+uv run corpus-council embed
 
 # Start the API server
-corpus-council serve
+uv run corpus-council serve
 ```
+
+> Alternatively, activate the virtualenv (`source .venv/bin/activate`) and use `corpus-council` directly.
 
 ## Usage
 
 ```bash
 # Interactive conversation with a user
-corpus-council chat user1234
+uv run corpus-council chat user1234
 
 # Structured data collection session
-corpus-council collect user1234 --plan signup
+uv run corpus-council collect user1234 --plan signup
 
 # Resume an existing collection session
-corpus-council collect user1234 --session <session_id>
+uv run corpus-council collect user1234 --session <session_id>
 
 # Ingest corpus documents
-corpus-council ingest /path/to/corpus/
+uv run corpus-council ingest /path/to/corpus/
 
 # Generate embeddings
-corpus-council embed
+uv run corpus-council embed
 
 # Start the API server (default: 127.0.0.1:8000)
-corpus-council serve --host 0.0.0.0 --port 8000
+uv run corpus-council serve --host 0.0.0.0 --port 8000
 ```
 
 ## Workflow
@@ -74,9 +76,9 @@ Lower `position` = higher authority. Position 1 always has final say.
 
 **3. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, and directory paths. API keys are always set via environment variables, never in config.
 
-**4. Ingest and embed** — run `corpus-council ingest` then `corpus-council embed` to chunk documents and build the vector index in ChromaDB.
+**4. Ingest and embed** — run `uv run corpus-council ingest` then `uv run corpus-council embed` to chunk documents and build the vector index in ChromaDB.
 
-**5. Interact** — use `corpus-council chat` for conversation mode or `corpus-council collect` for structured interview mode. The full API is also available at `http://localhost:8000/docs` after `corpus-council serve`.
+**5. Interact** — use `uv run corpus-council chat` for conversation mode or `uv run corpus-council collect` for structured interview mode. The full API is also available at `http://localhost:8000/docs` after `uv run corpus-council serve`.
 
 ## API Endpoints
 
