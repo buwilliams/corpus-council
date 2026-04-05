@@ -37,6 +37,7 @@ packages = ["src/corpus_council"]
 
 [tool.pytest.ini_options]
 addopts = ""
+asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "llm: marks tests that make real LLM API calls (deselect with '-m \"not llm\"')",
