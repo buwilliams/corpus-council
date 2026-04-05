@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import dataclasses
-import sys
 import uuid
 from pathlib import Path
 
 import typer
 import uvicorn
+from prompt_toolkit import PromptSession
+from prompt_toolkit.history import InMemoryHistory
 
 from corpus_council.core.collection import respond_collection, start_collection
 from corpus_council.core.config import AppConfig, load_config
@@ -50,8 +51,14 @@ def chat(
 
     typer.echo(f"Welcome! Chatting as {user_id}. Type 'quit' or 'exit' to leave.")
 
-    for line in sys.stdin:
-        message = line.rstrip("\n")
+    session: PromptSession[str] = PromptSession(history=InMemoryHistory())
+    while True:
+        try:
+            message = session.prompt("> ")
+        except KeyboardInterrupt:
+            break
+        except EOFError:
+            break
         if message in ("quit", "exit"):
             break
         if not message:
@@ -92,6 +99,8 @@ def collect(
     store = FileStore(config.data_dir)
     llm = LLMClient(config)
 
+    collect_session: PromptSession[str] = PromptSession(history=InMemoryHistory())
+
     if session is None:
         session_id = str(uuid.uuid4())
         collection_session = start_collection(
@@ -104,11 +113,10 @@ def collect(
         )
     else:
         session_id = session
-        # Read the first response from stdin to call respond_collection
-        first_line = sys.stdin.readline()
-        if not first_line:
+        try:
+            first_response = collect_session.prompt("> ")
+        except (KeyboardInterrupt, EOFError):
             return
-        first_response = first_line.rstrip("\n")
         collection_session = respond_collection(
             user_id=user_id,
             session_id=session_id,
@@ -121,10 +129,10 @@ def collect(
     while collection_session.status != "complete":
         if collection_session.next_prompt:
             typer.echo(collection_session.next_prompt)
-        line = sys.stdin.readline()
-        if not line:
+        try:
+            response = collect_session.prompt("> ")
+        except (KeyboardInterrupt, EOFError):
             break
-        response = line.rstrip("\n")
         collection_session = respond_collection(
             user_id=user_id,
             session_id=session_id,
