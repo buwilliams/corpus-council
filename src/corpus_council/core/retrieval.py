@@ -37,9 +37,12 @@ def retrieve_chunks(
 
     n_results = top_k if top_k is not None else config.retrieval_top_k
 
+    import logging
+
     from sentence_transformers import SentenceTransformer
 
-    model: SentenceTransformer = SentenceTransformer(config.embedding_model)
+    logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+    model: SentenceTransformer = SentenceTransformer(config.embedding_model, local_files_only=True)
     raw_embedding: Any = model.encode([query], show_progress_bar=False)
     query_vector: Sequence[float] = raw_embedding[0].tolist()
 
