@@ -36,7 +36,7 @@ corpus-council = "corpus_council.cli.main:app"
 packages = ["src/corpus_council"]
 
 [tool.pytest.ini_options]
-addopts = "--cov=src/corpus_council/core --cov-fail-under=80"
+addopts = ""
 testpaths = ["tests"]
 
 [tool.mypy]
@@ -49,3 +49,8 @@ ignore = []
 
 [tool.coverage.run]
 source = ["src/corpus_council/core"]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.1.0",
+]

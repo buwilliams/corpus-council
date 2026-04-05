@@ -318,6 +318,11 @@ dev = [
     { name = "types-pyyaml" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "pytest-cov" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.40" },
@@ -338,6 +343,9 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
 provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [{ name = "pytest-cov", specifier = ">=7.1.0" }]
 
 [[package]]
 name = "coverage"
