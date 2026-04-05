@@ -56,3 +56,9 @@ Thumbs.db
 
 # Runtime-generated data (user data, embeddings, corpus chunks)
 data/
+
+# Deployment-specific content (corpus documents and council personas)
+corpus/*
+!corpus/.gitkeep
+council/*
+!council/.gitkeep
