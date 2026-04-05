@@ -19,3 +19,5 @@ chunking:
 
 retrieval:
   top_k: 5
+
+chroma_collection: corpus

@@ -20,6 +20,7 @@ class AppConfig:
     plans_dir: Path
     chunk_max_size: int
     retrieval_top_k: int
+    chroma_collection: str = "corpus"
 
 
 def _resolve_path(config_dir: Path, value: Any) -> Path:
@@ -104,6 +105,14 @@ def load_config(path: str | Path) -> AppConfig:
     retrieval_section = _require_dict(data, "retrieval")
     retrieval_top_k = _require_int(retrieval_section, "top_k")
 
+    chroma_collection_raw = data.get("chroma_collection", "corpus")
+    if not isinstance(chroma_collection_raw, str):
+        raw_type = type(chroma_collection_raw).__name__
+        raise ValueError(
+            f"Config key 'chroma_collection' must be a string, got {raw_type!r}"
+        )
+    chroma_collection: str = chroma_collection_raw
+
     return AppConfig(
         llm_provider=llm_provider,
         llm_model=llm_model,
@@ -116,6 +125,7 @@ def load_config(path: str | Path) -> AppConfig:
         plans_dir=_resolve_path(config_dir, data.get("plans_dir", "plans")),
         chunk_max_size=chunk_max_size,
         retrieval_top_k=retrieval_top_k,
+        chroma_collection=chroma_collection,
     )
 
 
