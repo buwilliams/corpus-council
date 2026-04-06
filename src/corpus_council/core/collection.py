@@ -36,6 +36,7 @@ def start_collection(
     config: AppConfig,
     store: FileStore,
     llm: LLMClient,
+    mode: str = "sequential",
 ) -> CollectionSession:
     """Create a new collection session, generate first question, return state."""
     # 1. Validate and load plan
@@ -109,6 +110,7 @@ def respond_collection(
     config: AppConfig,
     store: FileStore,
     llm: LLMClient,
+    mode: str = "sequential",
 ) -> CollectionSession:
     """Process user response: validate+extract value, advance to next field or complete.
 

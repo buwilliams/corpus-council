@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .config import AppConfig
+from .consolidated import run_consolidated_deliberation
 from .council import load_council
 from .deliberation import run_deliberation
 from .llm import LLMClient
@@ -25,6 +26,7 @@ def run_conversation(
     config: AppConfig,
     store: FileStore,
     llm: LLMClient,
+    mode: str = "sequential",
 ) -> ConversationResult:
     """Load context, retrieve chunks, run council deliberation, persist, and return."""
     # 1. Load context, initialise with defaults if empty
@@ -48,7 +50,10 @@ def run_conversation(
     members = load_council(config)
 
     # 4. Run deliberation
-    result = run_deliberation(message, chunks, members, llm)
+    if mode == "consolidated":
+        result = run_consolidated_deliberation(message, chunks, members, llm)
+    else:
+        result = run_deliberation(message, chunks, members, llm)
 
     # 5. Increment turn count
     turn_count: int = int(context.get("turn_count", 0)) + 1
