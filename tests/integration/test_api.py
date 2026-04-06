@@ -25,6 +25,13 @@ class TestLLM(LLMClient):
             )
         if template_name == "collection_prompt":
             return self.render_template(template_name, context)
+        if template_name == "council_consolidated":
+            return (
+                "=== MEMBER: Test Member ===\n"
+                "This is a test response.\n"
+                "ESCALATION: NONE\n"
+                "=== END MEMBER ==="
+            )
         return "Mock response"
 
 
@@ -176,3 +183,25 @@ async def test_post_conversation_invalid_user_id_returns_422(
         "/conversation", json={"user_id": "ab", "message": "hello"}
     )
     assert response.status_code == 422
+
+
+async def test_post_conversation_mode_invalid_returns_422(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(
+        "/conversation",
+        json={"user_id": "testuser", "message": "hi", "mode": "invalid_mode"},
+    )
+    assert response.status_code == 422
+
+
+async def test_post_conversation_mode_consolidated_returns_200(
+    client: httpx.AsyncClient,
+) -> None:
+    response = await client.post(
+        "/conversation",
+        json={"user_id": "testuser", "message": "hi", "mode": "consolidated"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "response" in body
