@@ -62,3 +62,6 @@ corpus/*
 !corpus/.gitkeep
 council/*
 !council/.gitkeep
+
+# Local run examples and scratch output
+examples/
