@@ -1,0 +1,38 @@
+$ time uv run corpus-council query user1234 "My 10-year-old wants their own phone. What should I do?"
+Loading weights: 100%|█| 103/103 [00:00<00:00, 2104.24it/s
+BertModel LOAD REPORT from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  |
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  |
+
+Notes:
+- UNEXPECTED:   can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+This is one of the most common questions parents face right now — and the fact that you're pausing to ask it thoughtfully already puts you in a good position.
+
+**First, a reframe worth sitting with:**
+
+Your child isn't asking for a phone. They're asking for a pocket supercomputer — one that's faster and more powerful than the best computers that existed a few decades ago, with near-unlimited access to the internet and everyone on it. That's not a reason to say no. It's a reason to be intentional before you say yes.
+
+**Here's a process that actually works:**
+
+**1. Don't say no right away — ask questions first.**
+Start with: *"What do you want to use it for?"* Then listen. Really listen. Involving your child in this decision builds their investment in the boundaries you'll eventually set together. At ten, this may be the beginning of a longer conversation, not a moment that requires an immediate answer.
+
+**2. Think honestly about readiness.**
+The corpus is clear that the right moment is "when you believe your child both needs and is ready" — ready to handle a phone with responsibility and with respect for others and for themselves. That's less a checklist than a judgment call you're in the best position to make, because you know your child. Trust that.
+
+**3. Consider offering a flip phone first.**
+They'll almost certainly say "No way." That's fine — that's the point. It signals clearly that a phone is for calls and texts first, and that full access comes with demonstrated responsibility. It also establishes early that if a smartphone gets misused, a flip phone is a real and available consequence — not an empty threat.
+
+**4. If you go smartphone, go in with a plan.**
+Ten is now the average age parents provide one, often for completely legitimate safety and communication reasons. But before you hand it over, sit down together and talk through: when, where, and how it can be used — and what happens when those expectations aren't met. Keep access to the device and their apps, and let them know you'll check in on usage periodically. This isn't surveillance; it's mentorship.
+
+---
+
+The goal here isn't yes or no. It's a decision you both understand and can hold each other to.
+
+There's no perfect answer — but a thoughtful process is the next best thing, and you're already in it.
+
+real    1m58.472s
+user    0m7.138s
+sys     0m1.170s

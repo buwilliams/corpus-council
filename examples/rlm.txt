@@ -1,0 +1,20 @@
+$ time uv run cli search query ./data/content/ "My 10-year
+-old wants their own phone. What should I do?"
+~ Done (185.8s)
+
+============================================================
+RESULT:
+============================================================
+There's no single "right age" for a first phone — what matters most is your child's readiness and your family's plan for how it will be used. At 10, your child is entering the tween years — naturally seeking more independence and social connection. That's healthy! But a smartphone opens the door to the entire digital world, so this is a moment to be intentional, not reactive.
+
+**Why it matters:** Tweens are still developing the self-regulation, judgment, and social-emotional skills needed to navigate the online world. What matters isn't just *whether* a child has a phone, but the content they access, the context of their use, and the relationship you build around it.
+
+**Tips:**
+
+- **Create a media use agreement together.** Before any device enters the picture, sit down with your child and co-create clear expectations — when and where the phone can be used, which apps are allowed, and that you'll check in openly and transparently. When kids help shape the plan, they're more invested in following it.
+- **Start with less and build up.** Consider beginning with a basic phone or limited device that meets the real need — staying in touch with you — without full internet and social media access. You can expand privileges as your child demonstrates responsibility.
+- **Stay engaged and curious.** The real goal isn't managing a device — it's coaching your child toward thoughtful digital citizenship. Keep conversations open about what they encounter online, model the balanced habits you want to see, and remember: what's most protective is engaging *with* your child around media, not just setting rules from a distance.
+
+real    3m6.388s
+user    0m0.926s
+sys     0m0.233s

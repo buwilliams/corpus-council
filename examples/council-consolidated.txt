@@ -1,0 +1,43 @@
+$ time uv run corpus-council query user1234 "My 10-year-old wants their own phone. What should I do?" --mode consolidated
+Loading weights: 100%|███████████████████████| 103/103 [00:00<00:00, 2264.22it/s]
+BertModel LOAD REPORT from: sentence-transformers/all-MiniLM-L6-v2
+Key                     | Status     |  |
+------------------------+------------+--+-
+embeddings.position_ids | UNEXPECTED |  |
+
+Notes:
+- UNEXPECTED:   can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+The council responses appear to be empty, but I'll provide a well-grounded answer directly.
+
+---
+
+This is a genuinely common parenting decision, and there's no single right answer — it depends on your child and your family. Here are the key things to think through:
+
+**Consider your child's readiness**
+- Do they demonstrate responsibility with other things (chores, schoolwork, belongings)?
+- Can they handle disappointment and limits without escalating?
+- Do you have a reasonable level of trust in their judgment?
+
+**Practical reasons a phone might make sense at 10**
+- Safety and the ability to reach you (especially if they're home alone or traveling independently)
+- Coordinating activities and playdates
+- Social inclusion, depending on their peer group
+
+**Real concerns worth taking seriously**
+- Screen time and its impact on sleep, focus, and mood
+- Exposure to social media, inappropriate content, and online strangers
+- The social pressures that come with constant connectivity
+
+**A middle-ground approach many families find useful**
+- Start with a basic/limited phone (calls and texts only) rather than a full smartphone
+- Use parental controls and screen time limits from day one
+- Set clear rules upfront: where the phone goes at night, what apps are allowed, and what happens if rules are broken
+- Frame it as a privilege that expands with demonstrated responsibility
+
+**The honest bottom line:** Ten is on the younger end, and many child development experts suggest waiting until 12–14 for a full smartphone. But a simple device for safety and communication is a reasonable choice for many 10-year-olds with the right guardrails in place.
+
+Trust your knowledge of your own kid — you're in the best position to judge their maturity.
+
+real    0m33.836s
+user    0m6.612s
+sys     0m0.916s
