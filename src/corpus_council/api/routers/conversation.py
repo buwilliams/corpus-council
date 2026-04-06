@@ -15,7 +15,10 @@ async def post_conversation(request: ConversationRequest) -> ConversationRespons
     from corpus_council.api.app import config, llm, store
 
     user_id = validate_id(request.user_id, "user_id")
-    result = run_conversation(user_id, request.message, config, store, llm)
+    resolved_mode: str = request.mode or config.deliberation_mode
+    result = run_conversation(
+        user_id, request.message, config, store, llm, mode=resolved_mode
+    )
     return ConversationResponse(response=result.response, user_id=user_id)
 
 

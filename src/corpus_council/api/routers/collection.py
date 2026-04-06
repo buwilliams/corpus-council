@@ -34,9 +34,12 @@ async def post_collection_start(
     user_id = validate_id(request.user_id, "user_id")
     plan_id = validate_id(request.plan_id, "plan_id")
     session_id = str(uuid.uuid4())
+    resolved_mode: str = request.mode or config.deliberation_mode
 
     try:
-        session = start_collection(user_id, plan_id, session_id, config, store, llm)
+        session = start_collection(
+            user_id, plan_id, session_id, config, store, llm, mode=resolved_mode
+        )
     except FileNotFoundError:
         return JSONResponse(status_code=404, content={"error": "plan not found"})
 
@@ -56,10 +59,11 @@ async def post_collection_respond(
 
     user_id = validate_id(request.user_id, "user_id")
     session_id = validate_id(request.session_id, "session_id")
+    resolved_mode: str = request.mode or config.deliberation_mode
 
     try:
         session = respond_collection(
-            user_id, session_id, request.message, config, store, llm
+            user_id, session_id, request.message, config, store, llm, mode=resolved_mode
         )
     except FileNotFoundError:
         return JSONResponse(status_code=404, content={"error": "session not found"})

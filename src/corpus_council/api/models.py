@@ -14,6 +14,7 @@ class ConversationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     user_id: str
     message: str
+    mode: Literal["sequential", "consolidated"] | None = None
 
 
 class ConversationResponse(BaseModel):
@@ -26,6 +27,7 @@ class CollectionStartRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     user_id: str
     plan_id: str
+    mode: Literal["sequential", "consolidated"] | None = None
 
 
 class CollectionStartResponse(BaseModel):
@@ -40,6 +42,7 @@ class CollectionRespondRequest(BaseModel):
     user_id: str
     session_id: str
     message: str
+    mode: Literal["sequential", "consolidated"] | None = None
 
 
 class CollectionRespondResponse(BaseModel):
