@@ -80,20 +80,29 @@ def test_query_command_consolidated_mode(
 
     import yaml
 
+    # Pre-populate corpus so retrieval works in the subprocess
+    ingest_corpus(test_config)
+    embed_corpus(test_config)
+
     config_path = tmp_path / "config.yaml"
     config_data = {
-        "llm_provider": test_config.llm_provider,
-        "llm_model": test_config.llm_model,
-        "embedding_provider": test_config.embedding_provider,
-        "embedding_model": test_config.embedding_model,
+        "llm": {
+            "provider": test_config.llm_provider,
+            "model": test_config.llm_model,
+        },
+        "embedding": {
+            "provider": test_config.embedding_provider,
+            "model": test_config.embedding_model,
+        },
         "data_dir": str(test_config.data_dir),
         "corpus_dir": str(test_config.corpus_dir),
         "council_dir": str(test_config.council_dir),
         "templates_dir": str(test_config.templates_dir),
         "plans_dir": str(test_config.plans_dir),
-        "chunk_max_size": test_config.chunk_max_size,
-        "retrieval_top_k": test_config.retrieval_top_k,
+        "chunking": {"max_size": test_config.chunk_max_size},
+        "retrieval": {"top_k": test_config.retrieval_top_k},
         "chroma_collection": test_config.chroma_collection,
+        "deliberation_mode": test_config.deliberation_mode,
     }
     config_path.write_text(yaml.dump(config_data), encoding="utf-8")
 
