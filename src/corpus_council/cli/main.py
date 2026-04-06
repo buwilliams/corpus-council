@@ -68,6 +68,25 @@ def chat(
 
 
 @app.command()
+def query(
+    user_id: str = typer.Argument(..., help="User identifier"),
+    message: str = typer.Argument(..., help="Message to send"),
+) -> None:
+    """Send a single message and print the response, then exit."""
+    try:
+        validate_id(user_id, "user_id")
+    except ValueError as exc:
+        typer.echo(f"Invalid user_id: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+    config = _load_config_or_exit()
+    store = FileStore(config.data_dir)
+    llm = LLMClient(config)
+    result = run_conversation(user_id, message, config, store, llm)
+    typer.echo(result.response)
+
+
+@app.command()
 def collect(
     user_id: str = typer.Argument(..., help="User identifier"),
     session: str | None = typer.Option(None, "--session", help="Existing session ID"),

@@ -61,7 +61,9 @@ def embed_corpus(config: AppConfig) -> EmbedResult:
     from sentence_transformers import SentenceTransformer
 
     logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
-    model: SentenceTransformer = SentenceTransformer(config.embedding_model, local_files_only=True)
+    model: SentenceTransformer = SentenceTransformer(
+        config.embedding_model, local_files_only=True
+    )
 
     texts: list[str] = [str(c.get("text", "")) for c in chunks]
     raw_embeddings: Any = model.encode(texts, show_progress_bar=False)

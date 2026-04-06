@@ -42,7 +42,9 @@ def retrieve_chunks(
     from sentence_transformers import SentenceTransformer
 
     logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
-    model: SentenceTransformer = SentenceTransformer(config.embedding_model, local_files_only=True)
+    model: SentenceTransformer = SentenceTransformer(
+        config.embedding_model, local_files_only=True
+    )
     raw_embedding: Any = model.encode([query], show_progress_bar=False)
     query_vector: Sequence[float] = raw_embedding[0].tolist()
 
