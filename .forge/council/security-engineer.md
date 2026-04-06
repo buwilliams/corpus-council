@@ -56,6 +56,10 @@ Reviews all API key handling, file I/O safety, and input validation at every sys
 
 9. **Verify no prompt injection vectors.** User messages flow into LLM prompt templates. Confirm that the template rendering system does not allow user message content to break out of the `{{ user_message }}` placeholder and inject additional template directives. If using Jinja2, use `autoescape=True` or pass user content as a variable, never as part of the template string itself.
 
+10. **Validate the `mode` field is a closed enum in all API request bodies.** In `src/corpus_council/api/models.py`, the `mode` field must be typed as `Literal["sequential", "consolidated"] | None = None` — not `str | None`. A plain `str` annotation will accept any value, allowing callers to pass arbitrary strings that may reach template rendering or dispatch logic. Confirm that submitting `"mode": "../../etc"` to any endpoint returns HTTP 422 from Pydantic validation before any Python code processes the value.
+
+11. **Audit member persona data in the consolidated template context.** In the consolidated pipeline, all member personas from `council/*.md` files are passed to the `council_consolidated.md` template as a structured list. Confirm that member persona content (name, persona prose, escalation rules) is passed as Jinja2 context variables — never concatenated into the template string itself. If persona markdown contains Jinja2-like syntax (e.g., `{{ }}`), confirm it is not interpreted as a directive by the template engine.
+
 ### Verification
 
 ```
@@ -100,6 +104,8 @@ The security-engineer cares about attack surface, secret hygiene, and whether un
 - Exception messages from `FileNotFoundError` or internal errors returned directly in API responses — leaks internal path structure to callers
 - User message content logged at INFO or DEBUG level — conversation content is user data and must not appear in server logs
 - Jinja2 or string interpolation patterns where user-supplied content is concatenated into the template string rather than passed as a context variable
+- The `mode` field in any API request model typed as `str` rather than `Literal["sequential", "consolidated"]` — a string field accepts arbitrary values and bypasses enum validation entirely; invalid values must produce HTTP 422 before reaching any dispatch logic
+- Council member persona prose passed to the consolidated template via string concatenation rather than as a structured Jinja2 context variable — if a persona file contains `{{ }}` syntax, it must not be interpreted as a template directive
 
 ### Questions I ask
 
@@ -108,3 +114,5 @@ The security-engineer cares about attack surface, secret hygiene, and whether un
 - Does `POST /corpus/ingest` with `path = "/etc/passwd"` return an error, or does it attempt to read the file?
 - Can a user message containing `}} {{ config.plans_dir` escape the prompt template and expose config values to the LLM?
 - Are there any `except Exception: pass` blocks that would silently swallow a security-relevant failure?
+- Does `POST /conversation` with `"mode": "../../evil"` return HTTP 422 rather than 500 or 200?
+- Are council member persona strings passed to `council_consolidated.md` as Jinja2 context variables, ensuring that Jinja2-like syntax in persona prose is treated as literal text, not as template directives?

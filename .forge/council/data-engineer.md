@@ -162,6 +162,8 @@ Owns the flat-file store design, 2-level directory sharding, fcntl locking, JSON
 
 8. **Ensure all `Path` objects come from config, never hardcoded strings.** `store.base`, `config.corpus_dir`, `config.council_dir`, `config.templates_dir`, and `config.plans_dir` are all `Path` values loaded from `config.yaml`.
 
+9. **Confirm no storage changes are required for consolidated mode.** `run_consolidated_deliberation()` returns the same `DeliberationResult` dataclass as `run_deliberation()`. The persistence layer in `conversation.py` and `collection.py` writes this result to `messages.jsonl` and `context.json` identically in both modes. No new JSONL schemas, no new JSON structures, no new ChromaDB collections. If a task asks you to add new storage structures for consolidated mode, that is out of scope — flag it.
+
 ### Verification
 
 ```
@@ -209,6 +211,7 @@ The data-engineer cares about data integrity, schema consistency, and whether th
 - Corpus ingestion that does not check for existing chunks before writing — re-running `ingest` on the same corpus will duplicate all chunks and vector embeddings
 - ChromaDB `add()` calls without checking for existing IDs — will throw on re-embed of an already-indexed corpus
 - User paths constructed with string concatenation instead of the `FileStore.user_dir()` method — easy to produce wrong shard paths silently
+- Any proposal to add new file schemas or ChromaDB collections to support consolidated mode — the consolidated pipeline produces identical `DeliberationResult` output, so all persistence is unchanged; new storage structures for this feature are out of scope
 
 ### Questions I ask
 
@@ -217,3 +220,4 @@ The data-engineer cares about data integrity, schema consistency, and whether th
 - What happens to `FileStore` if a `user_id` is only 3 characters long?
 - Is the ChromaDB collection opened with a consistent name across ingest and retrieval, or could a config change cause the embed and retrieve calls to use different collections?
 - Are all `Path` values derived from config, or are there any hardcoded `"data/"` strings in the source?
+- After a consolidated mode query, does `messages.jsonl` contain an entry with the same schema as a sequential mode entry? If not, downstream readers will break on the new format.

@@ -32,9 +32,21 @@ Writes and validates the full pytest test suite for `corpus_council`, ensuring r
    - `tests/unit/test_conversation.py` — full conversation turn written to `messages.jsonl`; context updated in `context.json`; resume from existing `context.json` loads prior state
    - `tests/unit/test_collection.py` — collection session created; fields accumulated across turns; session closes when all required fields collected; returns valid JSON structure
 
-3. **Write integration tests in `tests/integration/`:**
+3. **Write unit tests for `consolidated.py` in `tests/unit/test_consolidated.py`:**
 
-   - `test_api.py` — spin up the FastAPI app with `httpx.AsyncClient(app=app, base_url="http://test")`; exercise all six endpoints: `POST /conversation`, `POST /collection/start`, `POST /collection/respond`, `GET /collection/{user_id}/{session_id}`, `POST /corpus/ingest`, `POST /corpus/embed`; assert correct status codes and response shapes
+   - `test_council_consolidated_template_renders_all_personas` — render `council_consolidated.md` with a 2-member list; assert both member names and personas appear in the rendered string; use a real `llm.render_template()` call, never mock template rendering
+   - `test_evaluator_consolidated_template_renders_inputs` — render `evaluator_consolidated.md` with sample `council_responses` and `escalation_summary`; assert both appear in output
+   - `test_run_consolidated_deliberation_makes_exactly_two_calls` — stub only `LLMClient.call` (the HTTP transport layer); call `run_consolidated_deliberation()` with a real 2-member fixture; assert `LLMClient.call` was invoked exactly 2 times with the correct template names (`"council_consolidated"` then `"evaluator_consolidated"`)
+   - `test_run_consolidated_deliberation_returns_deliberation_result` — with a stubbed `LLMClient.call` returning a known string, assert the return type is `DeliberationResult` and `final_response` is non-empty
+   - `test_run_consolidated_deliberation_extracts_escalation` — stub `LLMClient.call` to return a council output containing one `ESCALATION: concern text` line; assert `escalation_triggered` is `True` and `escalating_member` is set; assert the escalation summary string is passed to the evaluator call
+
+4. **Write integration tests in `tests/integration/`:**
+
+   - `test_api.py` — spin up the FastAPI app with `httpx.AsyncClient(app=app, base_url="http://test")`; exercise all six endpoints: `POST /conversation`, `POST /collection/start`, `POST /collection/respond`, `GET /collection/{user_id}/{session_id}`, `POST /corpus/ingest`, `POST /corpus/embed`; assert correct status codes and response shapes; also test that `POST /conversation` with `"mode": "consolidated"` returns 200 and `"mode": "invalid"` returns 422
+   - `test_consolidated_integration.py` (marked `llm`, requires `ANTHROPIC_API_KEY`):
+     - `test_run_conversation_consolidated_mode` — real corpus, real council, real ChromaDB in `tmp_path`; call `run_conversation(user_id, message, config, store, llm, mode="consolidated")`; assert returns `ConversationResult` with a non-empty `response` field
+     - `test_post_conversation_consolidated_via_api` — `POST /conversation` with `{"user_id": ..., "message": ..., "mode": "consolidated"}` against the real test app; assert 200 and non-empty `response`
+     - `test_query_command_consolidated_mode` — run `uv run corpus-council query <user_id> <msg> --mode consolidated` via `subprocess.run`; assert exit code 0 and non-empty stdout
    - `test_full_conversation_flow.py` — real corpus files, real council persona files, real ChromaDB in `tmp_path`; run two turns of conversation; assert second turn loads prior context; assert `messages.jsonl` has two entries
    - `test_full_collection_flow.py` — real collection plan file; run turns until all required fields are collected; assert `collected.json` matches expected structure; assert session status is `complete`
 
@@ -77,7 +89,7 @@ The tester cares about whether the test suite actually catches regressions — n
 
 ### What I flag
 
-- Tests that use mocks or fakes for `FileStore`, corpus file loading, council persona loading, ChromaDB, or prompt template rendering — these are explicitly forbidden and hide real bugs
+- Tests that use mocks or fakes for `FileStore`, corpus file loading, council persona loading, ChromaDB, or prompt template rendering — these are explicitly forbidden and hide real bugs; LLM HTTP transport may be stubbed only in unit tests without the `llm` marker
 - Assertions that test implementation structure (e.g., asserting a private method was called) rather than observable behavior (the file exists with the correct content)
 - Missing error-path coverage — if a function can raise, there must be a test that triggers the raise and asserts the right exception
 - Test fixtures that set up state in the real `data/` directory instead of `tmp_path` — these are not isolated and will corrupt each other
@@ -91,3 +103,6 @@ The tester cares about whether the test suite actually catches regressions — n
 - Does the `FileStore` concurrency test actually run two threads simultaneously, or does it just call write twice sequentially?
 - Are all six API endpoints covered by integration tests that assert both success and failure responses?
 - If I delete `store.py`'s fcntl locking logic, which test fails?
+- Does the consolidated unit test verify exactly 2 calls to `llm.call()` — would it fail if a third call were added?
+- Is the escalation extraction test driven by a real parsed council output string, or by a mock that bypasses the parsing logic entirely?
+- Does the invalid `mode` value test (`"mode": "invalid"`) assert HTTP 422 specifically, not just a non-200 status?

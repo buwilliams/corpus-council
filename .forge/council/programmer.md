@@ -30,6 +30,7 @@ Implements all Python source code in `src/corpus_council/` — core modules, Fas
    - `retrieval.py` — queries ChromaDB; returns top-K chunks as typed results
    - `council.py` — reads YAML front matter + body prose from each `council/*.md` file; returns `list[CouncilMember]` sorted by `position` ascending
    - `deliberation.py` — full pipeline: context load → retrieval → member iteration (position descending) → escalation check → position-1 synthesis; full turn logged to `messages.jsonl`; calls `llm.py` exclusively for LLM calls
+   - `consolidated.py` — `run_consolidated_deliberation(user_message, corpus_chunks, members, llm) -> DeliberationResult`; makes exactly 2 `llm.call()` invocations: first `"council_consolidated"`, then `"evaluator_consolidated"`; parses `ESCALATION:` lines from council output; builds `deliberation_log` as `list[MemberLog]`; returns `DeliberationResult` with `final_response`, `deliberation_log`, `escalation_triggered`, `escalating_member`
    - `conversation.py` — orchestrates conversation mode; loads/saves `chat/messages.jsonl` and `chat/context.json` via `FileStore`
    - `collection.py` — orchestrates collection mode; reads plan from `plans/`; validates collected values; closes session when required fields complete; returns structured JSON
    - `api/` — FastAPI app; one router per concern; request/response models as Pydantic classes in each router file
@@ -45,9 +46,26 @@ Implements all Python source code in `src/corpus_council/` — core modules, Fas
 
 7. **For `deliberation.py`:** Iterate members from highest `position` value to lowest. After each member response, evaluate the member's `escalation_rule` by passing rule + response to a brief LLM check (rendered from a template). If triggered, set an escalation flag, skip remaining members, and pass the flag to position-1 for resolution. Position 1 always runs last and always produces the final response.
 
-8. **For the FastAPI app:** Each endpoint function must have a Pydantic request body model and a typed response model. Return HTTP 422 for validation errors (FastAPI default). Return HTTP 500 with a structured `{"error": str}` body for unexpected failures.
+8. **For `consolidated.py`:** Make exactly 2 `llm.call()` invocations — no more, no fewer, regardless of member count or escalation. First call: `llm.call("council_consolidated", {"members": members, "user_message": user_message, "corpus_chunks": corpus_chunks})`. Parse the response to extract one block per member and one `ESCALATION:` line per member. Build `escalation_summary` as a concatenated string of non-`NONE` escalation lines. Second call: `llm.call("evaluator_consolidated", {"user_message": user_message, "council_responses": council_output, "escalation_summary": escalation_summary})`. Build `deliberation_log` from the parsed member blocks. Return `DeliberationResult` — the same dataclass as `run_deliberation()`. Do not add any new return types.
 
-9. **For the Typer CLI:** `chat <user_id>` runs an interactive loop calling `conversation.py`. `collect <user_id> [--session <session_id>]` runs collection mode. `ingest <path>` calls `corpus.py`. `embed` calls `embeddings.py`. `serve` launches `uvicorn` with the FastAPI app.
+9. **For mode resolution in `conversation.py` and `collection.py`:** Accept `mode: str = "sequential"` parameter. Dispatch:
+   ```python
+   if mode == "consolidated":
+       result = run_consolidated_deliberation(message, chunks, members, llm)
+   else:
+       result = run_deliberation(message, chunks, members, llm)
+   ```
+   Do not modify `run_deliberation()` or any part of the sequential path.
+
+10. **For `config.py`:** Add exactly one field: `deliberation_mode: str = "sequential"` to `AppConfig`. Update `load_config()` to read this from YAML with `"sequential"` as the default when absent. Validate that the value is one of `"sequential"` or `"consolidated"`; raise `ValueError` on any other value.
+
+11. **For the FastAPI app:** Each endpoint function must have a Pydantic request body model and a typed response model. Return HTTP 422 for validation errors (FastAPI default). Return HTTP 500 with a structured `{"error": str}` body for unexpected failures. For the `mode` field in request bodies: `mode: Literal["sequential", "consolidated"] | None = None`; resolve via `request.mode or config.deliberation_mode`.
+
+12. **For the Typer CLI:** `chat <user_id>` runs an interactive loop calling `conversation.py`. `collect <user_id> [--session <session_id>]` runs collection mode. `ingest <path>` calls `corpus.py`. `embed` calls `embeddings.py`. `serve` launches `uvicorn` with the FastAPI app. Add `--mode` option to `chat`, `query`, and `collect` commands:
+    ```python
+    mode: str | None = typer.Option(None, "--mode", help="Deliberation mode: sequential or consolidated")
+    ```
+    Validate the provided value against `{"sequential", "consolidated"}` before passing it to core functions; print an error and exit 1 on invalid input. Resolve via `mode or config.deliberation_mode`.
 
 ### Verification
 
@@ -94,6 +112,9 @@ The programmer cares about implementation correctness, code clarity, and keeping
 - Inline prompt strings or hardcoded behavioral rules in Python source — these violate the core architectural constraint and are invisible to grep until runtime
 - Abstractions added "for future flexibility" that aren't in the task spec — scope creep makes the codebase harder to reason about
 - Cross-module imports that create circular dependencies (e.g., `deliberation.py` importing from `api/`)
+- Any modification to `run_deliberation()`, its templates, or the sequential pipeline — these are read-only under this spec
+- More than 2 `llm.call()` invocations in `run_consolidated_deliberation()` — the exact-2-call constraint is invariant regardless of member count or escalation state
+- A new return type introduced for `run_consolidated_deliberation()` — it must return `DeliberationResult`, the same dataclass as `run_deliberation()`
 
 ### Questions I ask
 
@@ -101,3 +122,5 @@ The programmer cares about implementation correctness, code clarity, and keeping
 - Is every LLM call going through `llm.py` with a template render, or is there an inline string somewhere?
 - Will `mypy src/corpus_council/core/` pass on this code without `# type: ignore` hacks?
 - Does this module stay within its responsibility, or is it reaching into another module's domain?
+- Does `run_consolidated_deliberation()` make exactly 2 `llm.call()` invocations — verifiable by counting call sites in the function body?
+- Does the mode resolution order (per-request → config → default) hold in both the API router and CLI command handlers?

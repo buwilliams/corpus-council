@@ -49,13 +49,33 @@ This role reviews and validates — it does not implement. Use this process for 
    - `embed`
    - `serve`
 
-6. **Check configuration completeness.** Confirm `config.yaml` controls: LLM provider + model, embedding provider + model, data directory, corpus/council/template paths. Confirm no deployment-specific value is hardcoded.
+   Additionally, confirm `--mode` is present on `chat`, `query`, and `collect` commands:
+   ```
+   uv run corpus-council query --help   # must show --mode
+   uv run corpus-council chat --help    # must show --mode
+   uv run corpus-council collect --help # must show --mode
+   ```
+
+6. **Check configuration completeness.** Confirm `config.yaml` controls: LLM provider + model, embedding provider + model, data directory, corpus/council/template paths. Confirm no deployment-specific value is hardcoded. Also confirm `deliberation_mode: sequential` is present in `config.yaml` and that `AppConfig` has exactly one new field (`deliberation_mode: str = "sequential"`) — no other config structure changes.
 
 7. **Check that user data sharding is correct.** Path must be `data/users/{user_id[0:2]}/{user_id[2:4]}/{user_id}/`. A `user_id` like `"abc123"` must produce `data/users/ab/c1/abc123/`.
 
 8. **Check that the corpus pipeline is functional.** `ingest` reads `.md` and `.txt` from the configured `corpus/` path. `embed` generates vectors and writes them to ChromaDB at `data/embeddings/`. Both can be invoked via CLI and API.
 
-9. **If anything is missing or wrong,** document it precisely — which requirement, what was expected, what was found — and emit `<task-blocked>` with a clear description.
+9. **Verify the consolidated mode deliverables checklist:**
+   - `src/corpus_council/core/consolidated.py` exists and `run_consolidated_deliberation()` is callable
+   - `templates/council_consolidated.md` exists and is a Jinja2 template (no inline Python strings)
+   - `templates/evaluator_consolidated.md` exists and receives `escalation_summary`
+   - `src/corpus_council/core/config.py` has `deliberation_mode` field with `"sequential"` default
+   - `config.yaml` has `deliberation_mode: sequential`
+   - All three relevant CLI commands show `--mode` in `--help` output
+   - `ConversationRequest`, `CollectionStartRequest`, `CollectionRespondRequest` each have an optional `mode` field
+   - `run_conversation()` and `run_collection()` accept and forward the `mode` parameter
+   - Invalid `mode` value returns HTTP 422 (verify with an httpx test)
+
+10. **Verify the sequential path is untouched.** Run the existing sequential test suite and confirm it still passes. No new failures. `run_deliberation()`, its templates, and all sequential behavior must be byte-for-byte unchanged in behavior.
+
+11. **If anything is missing or wrong,** document it precisely — which requirement, what was expected, what was found — and emit `<task-blocked>` with a clear description.
 
 ### Verification
 
@@ -101,6 +121,8 @@ The product-manager cares about whether the implementation actually delivers wha
 - Configuration values that are hardcoded in Python source instead of read from `config.yaml`
 - The council deliberation pipeline being bypassed or short-circuited — every interaction must go through position-descending member iteration and position-1 synthesis
 - Collection mode that does not actually close the session and return structured JSON when all required fields are collected
+- Any regression in the sequential path caused by changes to support consolidated mode — the two pipelines must be independent; sequential tests must pass unchanged
+- Mode resolution that does not follow the correct priority order: per-request field overrides config, which overrides the `"sequential"` default; a missing field at any layer must never raise an error
 
 ### Questions I ask
 
@@ -109,3 +131,5 @@ The product-manager cares about whether the implementation actually delivers wha
 - Can I point the platform at a different LLM provider by changing only `config.yaml`?
 - Are all six API endpoints accessible and returning correct response shapes against a real running server?
 - Is every deliverable bullet in `project.md` traceable to a specific file and function in `src/corpus_council/`?
+- If `config.yaml` has `deliberation_mode: consolidated` and no `mode` field is in the API request, does the API use consolidated mode? Does setting `mode: sequential` in the request body override it back to sequential?
+- Do all existing sequential tests still pass after this spec's changes are applied?

@@ -20,6 +20,13 @@ Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP stat
 
 1. **Define all Pydantic models first, before writing endpoint functions.** Place request models in `src/corpus_council/api/models.py`. Group them by resource: `ConversationRequest`, `ConversationResponse`, `CollectionStartRequest`, `CollectionStartResponse`, `CollectionRespondRequest`, `CollectionRespondResponse`, `CollectionStatusResponse`, `CorpusIngestRequest`, `CorpusIngestResponse`, `CorpusEmbedResponse`.
 
+   Add the `mode` field to the three mutable request models:
+   ```python
+   from typing import Literal
+   mode: Literal["sequential", "consolidated"] | None = None
+   ```
+   This field is optional (callers who omit it get the config default). Invalid literal values must return HTTP 422 via Pydantic's native validation — do not add a manual check that would return 500 instead.
+
 2. **Implement the FastAPI app structure:**
    - `src/corpus_council/api/app.py` — creates the `FastAPI` instance; registers routers
    - `src/corpus_council/api/routers/conversation.py` — `POST /conversation`
@@ -29,17 +36,19 @@ Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP stat
 3. **Endpoint contracts (implement exactly as specified):**
 
    `POST /conversation`
-   - Request: `{ "user_id": str, "message": str }`
+   - Request: `{ "user_id": str, "message": str, "mode": "sequential" | "consolidated" | null }` (`mode` is optional)
    - Response 200: `{ "response": str, "user_id": str }`
+   - Response 422: Pydantic validation error when `mode` is any value outside `"sequential"` | `"consolidated"`
    - Response 500: `{ "error": str }`
 
    `POST /collection/start`
-   - Request: `{ "user_id": str, "plan_id": str }` (`plan_id` maps to a file in `plans/`)
+   - Request: `{ "user_id": str, "plan_id": str, "mode": "sequential" | "consolidated" | null }` (`mode` optional)
    - Response 201: `{ "user_id": str, "session_id": str, "first_prompt": str }`
    - Response 404: `{ "error": "plan not found" }` when `plan_id` has no matching file
+   - Response 422: Pydantic validation error on invalid `mode` value
 
    `POST /collection/respond`
-   - Request: `{ "user_id": str, "session_id": str, "message": str }`
+   - Request: `{ "user_id": str, "session_id": str, "message": str, "mode": "sequential" | "consolidated" | null }` (`mode` optional)
    - Response 200: `{ "user_id": str, "session_id": str, "prompt": str | null, "status": "active" | "complete", "collected": dict }`
    - Response 404: `{ "error": "session not found" }` when session does not exist
    - When status is `"complete"`, `prompt` is `null` and `collected` contains all gathered fields
@@ -59,11 +68,14 @@ Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP stat
 
 4. **Implement the Typer CLI in `src/corpus_council/cli/main.py`:**
 
-   - `corpus-council chat <user_id>` — interactive REPL; reads from stdin; each line sent to conversation mode; prints response; exits on EOF or `quit`
-   - `corpus-council collect <user_id> [--session <session_id>]` — interactive collection session; starts new session if no `session_id`; resumes if provided; prints each prompt; exits when status is `complete`
+   - `corpus-council chat <user_id>` — interactive REPL; reads from stdin; each line sent to conversation mode; prints response; exits on EOF or `quit`; accepts `--mode sequential|consolidated`
+   - `corpus-council query <user_id> <message>` — single-turn query; prints response and exits; accepts `--mode sequential|consolidated`
+   - `corpus-council collect <user_id> [--session <session_id>]` — interactive collection session; starts new session if no `session_id`; resumes if provided; prints each prompt; exits when status is `complete`; accepts `--mode sequential|consolidated`
    - `corpus-council ingest <path>` — calls corpus ingestion; prints chunks created
    - `corpus-council embed` — runs embedding pipeline; prints vectors created
    - `corpus-council serve [--host <host>] [--port <port>]` — launches uvicorn with the FastAPI app; defaults: `host=127.0.0.1`, `port=8000`
+
+   The `--mode` flag must appear in `--help` output for `chat`, `query`, and `collect`. If the caller provides an invalid value (anything other than `"sequential"` or `"consolidated"`), print a descriptive error to stderr and exit with code 1. Omitting `--mode` falls back to `config.deliberation_mode`, which defaults to `"sequential"`. Never error on a missing `--mode`.
 
 5. **Register the CLI entry point in `pyproject.toml`:**
    ```
@@ -116,6 +128,8 @@ The api-designer cares about interface consistency, client predictability, and w
 - CLI commands whose flags or arguments do not parallel the API request fields — a user who knows the API should be able to predict the CLI with no surprises
 - Missing error responses on endpoints that can fail — every endpoint that reads from the file store can encounter a missing session; that case must be handled and documented in the response model
 - Extra endpoints or CLI commands beyond the spec — these expand the surface area without corresponding test coverage
+- The `mode` field typed as `str` instead of `Literal["sequential", "consolidated"]` — a plain `str` field will accept any value and never produce a 422, violating the enum validation constraint
+- Mode resolution logic placed in `core/` modules instead of at the API/CLI boundary — core functions accept an already-resolved mode string; they do not perform resolution themselves
 
 ### Questions I ask
 
@@ -124,3 +138,6 @@ The api-designer cares about interface consistency, client predictability, and w
 - Is the `session_id` in `POST /collection/start`'s response the same `session_id` accepted by `POST /collection/respond`?
 - Can a caller resume a collection session using only the `user_id` and `session_id` returned from a prior call?
 - Does `corpus-council serve` actually start a server that responds to `GET /docs`?
+- Does `POST /conversation` with `"mode": "invalid_value"` return 422 (not 500)?
+- Does omitting the `mode` field entirely from the request body produce no error and use the config default?
+- Does `uv run corpus-council query --help` show `--mode` in the output?
