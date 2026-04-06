@@ -37,6 +37,9 @@ def _load_config_or_exit() -> AppConfig:
 @app.command()
 def chat(
     user_id: str = typer.Argument(..., help="User identifier"),
+    mode: str | None = typer.Option(
+        None, "--mode", help="Deliberation mode: sequential or consolidated"
+    ),
 ) -> None:
     """Start an interactive chat session."""
     try:
@@ -46,6 +49,13 @@ def chat(
         raise typer.Exit(1) from exc
 
     config = _load_config_or_exit()
+    resolved_mode: str = mode or config.deliberation_mode
+    if mode is not None and mode not in {"sequential", "consolidated"}:
+        typer.echo(
+            f"Error: --mode must be 'sequential' or 'consolidated', got {mode!r}",
+            err=True,
+        )
+        raise typer.Exit(1)
     store = FileStore(config.data_dir)
     llm = LLMClient(config)
 
@@ -63,7 +73,9 @@ def chat(
             break
         if not message:
             continue
-        result = run_conversation(user_id, message, config, store, llm)
+        result = run_conversation(
+            user_id, message, config, store, llm, mode=resolved_mode
+        )
         typer.echo(f"> {result.response}")
 
 
@@ -71,6 +83,9 @@ def chat(
 def query(
     user_id: str = typer.Argument(..., help="User identifier"),
     message: str = typer.Argument(..., help="Message to send"),
+    mode: str | None = typer.Option(
+        None, "--mode", help="Deliberation mode: sequential or consolidated"
+    ),
 ) -> None:
     """Send a single message and print the response, then exit."""
     try:
@@ -80,9 +95,16 @@ def query(
         raise typer.Exit(1) from exc
 
     config = _load_config_or_exit()
+    resolved_mode: str = mode or config.deliberation_mode
+    if mode is not None and mode not in {"sequential", "consolidated"}:
+        typer.echo(
+            f"Error: --mode must be 'sequential' or 'consolidated', got {mode!r}",
+            err=True,
+        )
+        raise typer.Exit(1)
     store = FileStore(config.data_dir)
     llm = LLMClient(config)
-    result = run_conversation(user_id, message, config, store, llm)
+    result = run_conversation(user_id, message, config, store, llm, mode=resolved_mode)
     typer.echo(result.response)
 
 
@@ -92,6 +114,9 @@ def collect(
     session: str | None = typer.Option(None, "--session", help="Existing session ID"),
     plan: str | None = typer.Option(
         None, "--plan", help="Plan ID (required when no session given)"
+    ),
+    mode: str | None = typer.Option(
+        None, "--mode", help="Deliberation mode: sequential or consolidated"
     ),
 ) -> None:
     """Run an interactive data-collection session."""
@@ -115,6 +140,13 @@ def collect(
         raise typer.Exit(1)
 
     config = _load_config_or_exit()
+    resolved_mode: str = mode or config.deliberation_mode
+    if mode is not None and mode not in {"sequential", "consolidated"}:
+        typer.echo(
+            f"Error: --mode must be 'sequential' or 'consolidated', got {mode!r}",
+            err=True,
+        )
+        raise typer.Exit(1)
     store = FileStore(config.data_dir)
     llm = LLMClient(config)
 
@@ -129,6 +161,7 @@ def collect(
             config=config,
             store=store,
             llm=llm,
+            mode=resolved_mode,
         )
     else:
         session_id = session
@@ -143,6 +176,7 @@ def collect(
             config=config,
             store=store,
             llm=llm,
+            mode=resolved_mode,
         )
 
     while collection_session.status != "complete":
@@ -159,6 +193,7 @@ def collect(
             config=config,
             store=store,
             llm=llm,
+            mode=resolved_mode,
         )
 
     typer.echo("Collection complete.")
