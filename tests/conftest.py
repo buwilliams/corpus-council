@@ -169,7 +169,7 @@ def test_config(
     """Return an AppConfig with all paths pointing at tmp_path-based directories."""
     return AppConfig(
         llm_provider="anthropic",
-        llm_model="claude-3-5-haiku-20241022",
+        llm_model="claude-haiku-4-5-20251001",
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
         data_dir=data_dir,

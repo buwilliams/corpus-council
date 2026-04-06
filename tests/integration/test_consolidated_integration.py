@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 import httpx
@@ -100,8 +99,6 @@ def test_query_command_consolidated_mode(
 
     result = subprocess.run(
         [
-            sys.executable,
-            "-m",
             "uv",
             "run",
             "corpus-council",
