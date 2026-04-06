@@ -27,7 +27,7 @@ def _make_config(templates_dir: Path) -> Any:
 
     return AppConfig(
         llm_provider="anthropic",
-        llm_model="claude-3-5-haiku-20241022",
+        llm_model="claude-haiku-4-5-20251001",
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
         data_dir=templates_dir.parent / "data",
@@ -150,12 +150,13 @@ def test_evaluator_consolidated_template_renders_inputs(tmp_path: Path) -> None:
         "evaluator_consolidated",
         {
             "user_message": user_message,
-            "corpus_chunks": "No relevant corpus context available.",
-            "council_output": council_output,
+            "council_responses": council_output,
+            "escalation_summary": "",
         },
     )
 
     assert user_message in rendered
+    assert "Domain Analyst" in rendered
 
 
 def test_run_consolidated_deliberation_makes_exactly_two_calls(
@@ -253,7 +254,9 @@ def test_run_consolidated_deliberation_extracts_escalation(
     assert result.escalation_triggered is True
     assert result.escalating_member == "Domain Analyst"
 
-    # The council_output passed to evaluator contains the escalation text
     assert len(evaluator_contexts) == 1
-    evaluator_council_output = evaluator_contexts[0].get("council_output", "")
-    assert "out of scope" in evaluator_council_output
+    ctx = evaluator_contexts[0]
+    # Raw council output is forwarded to the evaluator.
+    assert "out of scope" in ctx.get("council_responses", "")
+    # Parsed escalation summary is also passed separately.
+    assert "out of scope" in ctx.get("escalation_summary", "")
