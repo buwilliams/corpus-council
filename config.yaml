@@ -21,3 +21,5 @@ retrieval:
   top_k: 5
 
 chroma_collection: corpus
+# Deliberation mode: "sequential" (default, 2N+1 LLM calls) or "consolidated" (2 LLM calls)
+deliberation_mode: sequential

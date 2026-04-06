@@ -21,6 +21,7 @@ class AppConfig:
     chunk_max_size: int
     retrieval_top_k: int
     chroma_collection: str = "corpus"
+    deliberation_mode: str = "sequential"
 
 
 def _resolve_path(config_dir: Path, value: Any) -> Path:
@@ -113,6 +114,19 @@ def load_config(path: str | Path) -> AppConfig:
         )
     chroma_collection: str = chroma_collection_raw
 
+    deliberation_mode_raw = data.get("deliberation_mode", "sequential")
+    if not isinstance(deliberation_mode_raw, str):
+        raw_dm_type = type(deliberation_mode_raw).__name__
+        raise ValueError(
+            f"Config key 'deliberation_mode' must be a string, got {raw_dm_type!r}"
+        )
+    if deliberation_mode_raw not in {"sequential", "consolidated"}:
+        raise ValueError(
+            f"Config key 'deliberation_mode' must be 'sequential' or 'consolidated', "
+            f"got {deliberation_mode_raw!r}"
+        )
+    deliberation_mode: str = deliberation_mode_raw
+
     return AppConfig(
         llm_provider=llm_provider,
         llm_model=llm_model,
@@ -126,6 +140,7 @@ def load_config(path: str | Path) -> AppConfig:
         chunk_max_size=chunk_max_size,
         retrieval_top_k=retrieval_top_k,
         chroma_collection=chroma_collection,
+        deliberation_mode=deliberation_mode,
     )
 
 
