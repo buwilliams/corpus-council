@@ -1,0 +1,249 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+import yaml
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+TEMPLATES_DIR = PROJECT_ROOT / "templates"
+REAL_GOALS_DIR = PROJECT_ROOT / "goals"
+
+
+def _write_persona_files(council_dir: Path) -> None:
+    """Write coach.md and analyst.md to council_dir with valid front matter."""
+    council_dir.mkdir(parents=True, exist_ok=True)
+
+    (council_dir / "coach.md").write_text(
+        "---\n"
+        "name: Coach\n"
+        "persona: Coach\n"
+        "primary_lens: coaching\n"
+        "position: 1\n"
+        "role_type: synthesizer\n"
+        "escalation_rule: Halt if off-topic\n"
+        "---\n"
+        "Coach body.\n",
+        encoding="utf-8",
+    )
+
+    (council_dir / "analyst.md").write_text(
+        "---\n"
+        "name: Analyst\n"
+        "persona: Analyst\n"
+        "primary_lens: analysis\n"
+        "position: 2\n"
+        "role_type: domain_specialist\n"
+        "escalation_rule: Halt if out of scope\n"
+        "---\n"
+        "Analyst body.\n",
+        encoding="utf-8",
+    )
+
+
+def _write_config(tmp_path: Path) -> Path:
+    """Write a config.yaml to tmp_path and return its path."""
+    config_data = {
+        "llm": {
+            "provider": "anthropic",
+            "model": "claude-haiku-4-5-20251001",
+        },
+        "embedding": {
+            "provider": "sentence-transformers",
+            "model": "all-MiniLM-L6-v2",
+        },
+        "data_dir": str(tmp_path / "data"),
+        "corpus_dir": str(tmp_path / "corpus"),
+        "council_dir": str(tmp_path / "council"),
+        "goals_dir": str(tmp_path / "goals"),
+        "personas_dir": str(tmp_path / "council"),
+        "goals_manifest_path": str(tmp_path / "goals_manifest.json"),
+        "templates_dir": str(TEMPLATES_DIR),
+        "plans_dir": str(tmp_path / "plans"),
+        "chunking": {"max_size": 512},
+        "retrieval": {"top_k": 3},
+        "chroma_collection": "test_corpus",
+        "deliberation_mode": "sequential",
+    }
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(yaml.dump(config_data), encoding="utf-8")
+    return config_path
+
+
+@pytest.fixture()
+def goals_workspace(tmp_path: Path) -> Path:
+    """
+    Set up a workspace with:
+    - Real goal files (intake.md, create-plan.md) copied to tmp_path/goals/
+    - Persona files (coach.md, analyst.md) written to tmp_path/council/
+    - A config.yaml written to tmp_path/
+    Returns tmp_path.
+    """
+    goals_dir = tmp_path / "goals"
+    goals_dir.mkdir(parents=True, exist_ok=True)
+
+    # Copy real goal files into the workspace
+    for goal_file in ("intake.md", "create-plan.md"):
+        src = REAL_GOALS_DIR / goal_file
+        if src.exists():
+            shutil.copy2(src, goals_dir / goal_file)
+
+    # Write persona files that the goal files reference
+    council_dir = tmp_path / "council"
+    _write_persona_files(council_dir)
+
+    # Create required directories
+    for d in ("data", "corpus", "plans"):
+        (tmp_path / d).mkdir(parents=True, exist_ok=True)
+
+    # Write config.yaml
+    _write_config(tmp_path)
+
+    return tmp_path
+
+
+def test_goals_process_command_exits_zero(goals_workspace: Path) -> None:
+    """Run 'corpus-council goals process' and assert exit 0 and manifest exists."""
+    result = subprocess.run(
+        ["uv", "run", "corpus-council", "goals", "process"],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert result.returncode == 0, (
+        f"goals process exited {result.returncode}\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+    manifest_path = goals_workspace / "goals_manifest.json"
+    assert manifest_path.exists(), "goals_manifest.json was not created"
+
+
+@pytest.mark.llm
+def test_query_with_goal_intake(goals_workspace: Path) -> None:
+    """Run 'corpus-council query --goal intake' and assert exit 0, non-empty stdout."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+
+    # First process goals so the manifest exists
+    proc_result = subprocess.run(
+        ["uv", "run", "corpus-council", "goals", "process"],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert proc_result.returncode == 0, (
+        f"goals process failed\n"
+        f"stdout: {proc_result.stdout}\nstderr: {proc_result.stderr}"
+    )
+
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "corpus-council",
+            "query",
+            "What are your goals for the next 6 weeks?",
+            "--goal",
+            "intake",
+        ],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert result.returncode == 0, (
+        f"query --goal intake exited {result.returncode}\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+    assert len(result.stdout.strip()) > 0, (
+        "Expected non-empty stdout from query command"
+    )
+
+
+@pytest.mark.llm
+def test_query_with_goal_create_plan(goals_workspace: Path) -> None:
+    """Run query --goal create-plan and assert exit 0, non-empty stdout."""
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        pytest.skip("ANTHROPIC_API_KEY not set")
+
+    # First process goals so the manifest exists
+    proc_result = subprocess.run(
+        ["uv", "run", "corpus-council", "goals", "process"],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert proc_result.returncode == 0, (
+        f"goals process failed\n"
+        f"stdout: {proc_result.stdout}\nstderr: {proc_result.stderr}"
+    )
+
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "corpus-council",
+            "query",
+            "Create a 6-week behaviour change plan for improving fitness.",
+            "--goal",
+            "create-plan",
+        ],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert result.returncode == 0, (
+        f"query --goal create-plan exited {result.returncode}\n"
+        f"stdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+    assert len(result.stdout.strip()) > 0, (
+        "Expected non-empty stdout from query command"
+    )
+
+
+def test_query_with_unknown_goal_exits_nonzero(goals_workspace: Path) -> None:
+    """Run 'corpus-council query --goal nonexistent' and assert non-zero exit."""
+    # First process goals so the manifest exists (no LLM needed)
+    proc_result = subprocess.run(
+        ["uv", "run", "corpus-council", "goals", "process"],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert proc_result.returncode == 0, (
+        f"goals process failed\n"
+        f"stdout: {proc_result.stdout}\nstderr: {proc_result.stderr}"
+    )
+
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "corpus-council",
+            "query",
+            "test",
+            "--goal",
+            "nonexistent",
+        ],
+        cwd=str(goals_workspace),
+        capture_output=True,
+        text=True,
+        env={**os.environ},
+    )
+    assert result.returncode != 0, "Expected non-zero exit for unknown goal, but got 0"
+    combined_output = result.stdout + result.stderr
+    assert "nonexistent" in combined_output, (
+        f"Expected 'nonexistent' in output, got:\n"
+        f"stdout: {result.stdout}\nstderr: {result.stderr}"
+    )
