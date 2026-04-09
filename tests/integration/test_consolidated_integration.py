@@ -78,11 +78,34 @@ def test_query_command_consolidated_mode(
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
 
+    import json
+
     import yaml
 
     # Pre-populate corpus so retrieval works in the subprocess
     ingest_corpus(test_config)
     embed_corpus(test_config)
+
+    # Write a goal manifest so the query --goal flag resolves
+    goal_manifest_path = tmp_path / "goals_manifest.json"
+    goal_manifest_path.write_text(
+        json.dumps(
+            [
+                {
+                    "name": "test-goal",
+                    "desired_outcome": "Answer AI questions",
+                    "corpus_path": str(test_config.corpus_dir),
+                    "council": [
+                        {"persona_file": "synthesizer.md", "authority_tier": 1},
+                        {"persona_file": "analyst.md", "authority_tier": 2},
+                        {"persona_file": "critic.md", "authority_tier": 3},
+                    ],
+                }
+            ],
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
 
     config_path = tmp_path / "config.yaml"
     config_data = {
@@ -103,6 +126,8 @@ def test_query_command_consolidated_mode(
         "retrieval": {"top_k": test_config.retrieval_top_k},
         "chroma_collection": test_config.chroma_collection,
         "deliberation_mode": test_config.deliberation_mode,
+        "personas_dir": str(test_config.personas_dir),
+        "goals_manifest_path": str(goal_manifest_path),
     }
     config_path.write_text(yaml.dump(config_data), encoding="utf-8")
 
@@ -112,8 +137,9 @@ def test_query_command_consolidated_mode(
             "run",
             "corpus-council",
             "query",
-            "testuser",
             "What is artificial intelligence?",
+            "--goal",
+            "test-goal",
             "--mode",
             "consolidated",
         ],
