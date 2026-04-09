@@ -1,3 +1,26 @@
+"""Goals model for corpus-council.
+
+A goal is a markdown file that declares a desired outcome, a list of council
+members (with authority tiers), and a corpus scope. Goals are pre-processed
+offline via ``corpus-council goals process`` into ``goals_manifest.json``.
+At runtime, ``--goal <name>`` loads the named goal from the manifest.
+
+Goal file format (YAML front matter in a ``.md`` file)::
+
+    ---
+    desired_outcome: "Human-readable description of the desired outcome."
+    corpus_path: "corpus"
+    council:
+      - persona_file: "coach.md"   # relative to personas_dir
+        authority_tier: 1          # 1 = highest authority
+      - persona_file: "analyst.md"
+        authority_tier: 2
+    ---
+    Optional body text with additional context for the council.
+
+See docs/goal-authoring-guide.md for the full authoring guide.
+"""
+
 from __future__ import annotations
 
 import json
