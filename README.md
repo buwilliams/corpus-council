@@ -51,6 +51,12 @@ uv run corpus-council embed
 
 # Start the API server (default: 127.0.0.1:8000)
 uv run corpus-council serve --host 0.0.0.0 --port 8000
+
+# Interactive chat session (not goal-aware; uses default council)
+uv run corpus-council chat <user-id>
+
+# Structured data-collection session (not goal-aware)
+uv run corpus-council collect <user-id> --plan <plan-id>
 ```
 
 ## Goals
@@ -59,7 +65,7 @@ A **goal** is a markdown file that declares a desired outcome, a council composi
 
 **Goal file format** (`goals/my-goal.md`):
 
-```yaml
+```
 ---
 desired_outcome: "Human-readable description of what this goal is trying to accomplish."
 corpus_path: "corpus"
@@ -78,12 +84,14 @@ Optional body text with additional context for the council.
 2. Run `corpus-council goals process` to validate and register it
 3. Use it at runtime: `corpus-council query --goal <name> "<message>"`
 
-Two goals ship with the project:
+Two goal files ship with the project:
 
 | Goal | Purpose |
 |---|---|
 | `intake` | Structured customer intake interview to gather user data |
 | `create-plan` | Synthesize intake data with the corpus to produce a COM-B 6-week plan |
+
+> **Note:** Both goals reference `coach.md` and `analyst.md` persona files. These are deployment-specific and must be created in `council/` before running `goals process`. See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md) for the persona file format.
 
 See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md) for the full authoring reference.
 
@@ -135,7 +143,13 @@ Lower `position` = higher authority. Position 1 always has final say.
 
 **3. Define your goals** — add goal markdown files to `goals/`. Each goal declares a `desired_outcome`, a `council` list (persona files + authority tiers), and a `corpus_path`. See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md).
 
-**4. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, directory paths, and `deliberation_mode`. API keys are always set via environment variables, never in config.
+**4. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, directory paths, and `deliberation_mode`. API keys are always set via environment variables, never in config. Three additional keys control the goals system:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `goals_dir` | `goals` | Directory containing goal `.md` files |
+| `personas_dir` | `council` | Directory containing persona `.md` files |
+| `goals_manifest_path` | `goals_manifest.json` | Path where the processed manifest is written |
 
 **5. Ingest, embed, and process** — run `ingest` then `embed` to chunk documents and build the vector index. Run `goals process` to register goal files into `goals_manifest.json`.
 
