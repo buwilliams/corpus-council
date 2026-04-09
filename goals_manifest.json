@@ -1,0 +1,32 @@
+[
+  {
+    "corpus_path": "corpus",
+    "council": [
+      {
+        "authority_tier": 1,
+        "persona_file": "coach.md"
+      },
+      {
+        "authority_tier": 2,
+        "persona_file": "analyst.md"
+      }
+    ],
+    "desired_outcome": "Synthesise the gathered customer intake data with the corpus to produce a personalised COM-B 6-week behaviour-change plan that identifies capability gaps, opportunity levers, and motivational strategies, and translates them into concrete weekly actions the customer can realistically undertake.",
+    "name": "create-plan"
+  },
+  {
+    "corpus_path": "corpus",
+    "council": [
+      {
+        "authority_tier": 1,
+        "persona_file": "coach.md"
+      },
+      {
+        "authority_tier": 2,
+        "persona_file": "analyst.md"
+      }
+    ],
+    "desired_outcome": "Conduct a structured customer intake interview to systematically gather user data including goals, current behaviours, perceived barriers, available resources, and motivational drivers that will inform a personalised COM-B behaviour-change plan.",
+    "name": "intake"
+  }
+]
