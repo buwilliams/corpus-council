@@ -4,78 +4,98 @@
 
 ### Role
 
-Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP status code conventions, and the Typer CLI interface design for `corpus_council`.
+Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP status code conventions, and the Typer CLI interface design for `corpus_council`, including the new `--goal <name>` flag and `corpus-council goals process` subcommand.
 
 ### Guiding Principles
 
 - Every endpoint must have an explicit Pydantic request body model and an explicit Pydantic response model. No `dict` or `Any` as a response type.
-- HTTP status codes must be semantically correct: 200 for success, 201 for creation, 404 when a resource (user, session) is not found, 422 for validation errors (FastAPI's default), 500 for unexpected server errors with a structured `{"error": "message"}` body.
+- HTTP status codes must be semantically correct: 200 for success, 201 for creation, 404 when a resource (goal, persona) is not found, 422 for validation errors (FastAPI's default), 500 for unexpected server errors with a structured `{"error": "message"}` body.
 - Field names across all endpoints must follow a single consistent convention: `snake_case`. No mixing of `camelCase` and `snake_case` in the same API.
 - The CLI interface mirrors the API semantics. A user who understands the API can predict the CLI flags without reading the help text.
 - Breaking changes are not permitted within a single spec. If a request shape must change, it must be backward-compatible or the task must explicitly scope a versioned change.
-- All endpoint paths follow the resource hierarchy in `project.md`: `/conversation`, `/collection/start`, `/collection/respond`, `/collection/{user_id}/{session_id}`, `/corpus/ingest`, `/corpus/embed`. Do not rename, nest differently, or add prefixes not in the spec.
 - Error responses must always include a human-readable `"error"` field. Never return an empty 500.
+- The `--goal <name>` flag is required for `query` — there is no default goal. Omitting it must produce a clear error, not a silent fallback to any hardcoded mode.
 
 ### Implementation Approach
 
-1. **Define all Pydantic models first, before writing endpoint functions.** Place request models in `src/corpus_council/api/models.py`. Group them by resource: `ConversationRequest`, `ConversationResponse`, `CollectionStartRequest`, `CollectionStartResponse`, `CollectionRespondRequest`, `CollectionRespondResponse`, `CollectionStatusResponse`, `CorpusIngestRequest`, `CorpusIngestResponse`, `CorpusEmbedResponse`.
+1. **Define all Pydantic models first, before writing endpoint functions.** Place request models in `src/corpus_council/api/models.py`.
 
-   Add the `mode` field to the three mutable request models:
+   The query request model must include `goal`:
    ```python
    from typing import Literal
-   mode: Literal["sequential", "consolidated"] | None = None
+   from pydantic import BaseModel, ConfigDict
+
+   class QueryRequest(BaseModel):
+       model_config = ConfigDict(extra="forbid")
+       message: str
+       goal: str                                              # required; resolved from goals_manifest.json
+       mode: Literal["sequential", "consolidated"] | None = None  # optional; falls back to config default
+
+   class QueryResponse(BaseModel):
+       model_config = ConfigDict(extra="forbid")
+       response: str
+       goal: str
    ```
-   This field is optional (callers who omit it get the config default). Invalid literal values must return HTTP 422 via Pydantic's native validation — do not add a manual check that would return 500 instead.
+
+   The `goal` field is a plain `str` (goal names are arbitrary identifiers, not an enum). The `mode` field is a `Literal` to enforce enum validation via Pydantic. Invalid `mode` values must return HTTP 422 — not 500.
 
 2. **Implement the FastAPI app structure:**
    - `src/corpus_council/api/app.py` — creates the `FastAPI` instance; registers routers
-   - `src/corpus_council/api/routers/conversation.py` — `POST /conversation`
-   - `src/corpus_council/api/routers/collection.py` — `POST /collection/start`, `POST /collection/respond`, `GET /collection/{user_id}/{session_id}`
+   - `src/corpus_council/api/routers/query.py` — `POST /query`
    - `src/corpus_council/api/routers/corpus.py` — `POST /corpus/ingest`, `POST /corpus/embed`
 
-3. **Endpoint contracts (implement exactly as specified):**
+   Remove routers for `conversation`, `collection/start`, `collection/respond`, and `collection/{user_id}/{session_id}` if the goals refactor replaces them. If they are retained as implementation details behind a goal, they must not be exposed as public endpoints.
 
-   `POST /conversation`
-   - Request: `{ "user_id": str, "message": str, "mode": "sequential" | "consolidated" | null }` (`mode` is optional)
-   - Response 200: `{ "response": str, "user_id": str }`
+3. **Endpoint contract for `POST /query`:**
+
+   - Request: `{ "message": str, "goal": str, "mode": "sequential" | "consolidated" | null }`
+   - Response 200: `{ "response": str, "goal": str }`
+   - Response 404: `{ "error": "Goal '<name>' not found" }` when the named goal is absent from the manifest
    - Response 422: Pydantic validation error when `mode` is any value outside `"sequential"` | `"consolidated"`
-   - Response 500: `{ "error": str }`
-
-   `POST /collection/start`
-   - Request: `{ "user_id": str, "plan_id": str, "mode": "sequential" | "consolidated" | null }` (`mode` optional)
-   - Response 201: `{ "user_id": str, "session_id": str, "first_prompt": str }`
-   - Response 404: `{ "error": "plan not found" }` when `plan_id` has no matching file
-   - Response 422: Pydantic validation error on invalid `mode` value
-
-   `POST /collection/respond`
-   - Request: `{ "user_id": str, "session_id": str, "message": str, "mode": "sequential" | "consolidated" | null }` (`mode` optional)
-   - Response 200: `{ "user_id": str, "session_id": str, "prompt": str | null, "status": "active" | "complete", "collected": dict }`
-   - Response 404: `{ "error": "session not found" }` when session does not exist
-   - When status is `"complete"`, `prompt` is `null` and `collected` contains all gathered fields
-
-   `GET /collection/{user_id}/{session_id}`
-   - Response 200: `{ "user_id": str, "session_id": str, "status": str, "collected": dict, "created_at": str }`
-   - Response 404: `{ "error": "session not found" }`
-
-   `POST /corpus/ingest`
-   - Request: `{ "path": str }` (path to corpus directory or file)
-   - Response 200: `{ "chunks_created": int, "files_processed": int }`
-   - Response 422: FastAPI default validation error on bad input
-
-   `POST /corpus/embed`
-   - Request: `{}` (no body required; operates on already-ingested chunks)
-   - Response 200: `{ "vectors_created": int }`
+   - Response 500: `{ "error": "Internal server error" }` for unexpected failures (not the raw exception message)
 
 4. **Implement the Typer CLI in `src/corpus_council/cli/main.py`:**
 
-   - `corpus-council chat <user_id>` — interactive REPL; reads from stdin; each line sent to conversation mode; prints response; exits on EOF or `quit`; accepts `--mode sequential|consolidated`
-   - `corpus-council query <user_id> <message>` — single-turn query; prints response and exits; accepts `--mode sequential|consolidated`
-   - `corpus-council collect <user_id> [--session <session_id>]` — interactive collection session; starts new session if no `session_id`; resumes if provided; prints each prompt; exits when status is `complete`; accepts `--mode sequential|consolidated`
-   - `corpus-council ingest <path>` — calls corpus ingestion; prints chunks created
-   - `corpus-council embed` — runs embedding pipeline; prints vectors created
-   - `corpus-council serve [--host <host>] [--port <port>]` — launches uvicorn with the FastAPI app; defaults: `host=127.0.0.1`, `port=8000`
+   ```python
+   import typer
 
-   The `--mode` flag must appear in `--help` output for `chat`, `query`, and `collect`. If the caller provides an invalid value (anything other than `"sequential"` or `"consolidated"`), print a descriptive error to stderr and exit with code 1. Omitting `--mode` falls back to `config.deliberation_mode`, which defaults to `"sequential"`. Never error on a missing `--mode`.
+   app = typer.Typer()
+   goals_app = typer.Typer()
+   app.add_typer(goals_app, name="goals")
+
+   @goals_app.command("process")
+   def goals_process() -> None:
+       """Validate and register all goal files from the configured goals directory."""
+       ...
+
+   @app.command("query")
+   def query(
+       message: str = typer.Argument(...),
+       goal: str = typer.Option(..., "--goal", help="Named goal to use for this query"),
+       mode: str | None = typer.Option(None, "--mode", help="Deliberation mode: sequential or consolidated"),
+   ) -> None:
+       ...
+
+   @app.command("ingest")
+   def ingest(path: str = typer.Argument(...)) -> None: ...
+
+   @app.command("embed")
+   def embed() -> None: ...
+
+   @app.command("serve")
+   def serve(
+       host: str = typer.Option("127.0.0.1", "--host"),
+       port: int = typer.Option(8000, "--port"),
+   ) -> None: ...
+   ```
+
+   - `corpus-council goals process` — validates and registers goal files; exits 0 on success, non-zero on error
+   - `corpus-council query --goal <name> <message>` — single-turn query; `--goal` is required; `--mode` is optional
+   - `corpus-council ingest <path>` — corpus ingestion
+   - `corpus-council embed` — embedding pipeline
+   - `corpus-council serve [--host] [--port]` — launches uvicorn
+
+   The `--goal` flag must appear in `corpus-council query --help`. If the named goal is not found in the manifest, print a clear error to stderr and exit 1. If `--mode` is provided with an invalid value, print a descriptive error to stderr and exit 1. Omitting `--mode` falls back to `config.deliberation_mode`.
 
 5. **Register the CLI entry point in `pyproject.toml`:**
    ```
@@ -85,21 +105,23 @@ Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP stat
 
 6. **Ensure all Pydantic models use `model_config = ConfigDict(extra="forbid")`.** Reject unexpected fields rather than silently ignoring them.
 
-7. **Add FastAPI exception handlers** for `FileNotFoundError` → 404, `ValueError` → 422, and uncaught exceptions → 500 with `{"error": str(exc)}`.
+7. **Add FastAPI exception handlers** for goal-not-found (`ValueError` from `load_goal`) → 404, validation errors → 422, and uncaught exceptions → 500 with `{"error": "Internal server error"}`.
 
 ### Verification
 
 ```
-uv run ruff check src/
-uv run ruff format --check src/
-uv run mypy src/corpus_council/core/
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src/
 uv run pytest tests/integration/test_api.py
 ```
 
-Also confirm the CLI entry point resolves:
+Also confirm the CLI entry points resolve:
 
 ```
 uv run corpus-council --help
+uv run corpus-council goals --help
+uv run corpus-council query --help   # must show --goal and --mode
 ```
 
 ### Save
@@ -122,22 +144,19 @@ The api-designer cares about interface consistency, client predictability, and w
 
 ### What I flag
 
+- `goal` missing from the `POST /query` request model — callers have no way to specify which council and corpus configuration to use
+- `mode` typed as `str` instead of `Literal["sequential", "consolidated"]` — a plain `str` field accepts any value and never produces a 422, allowing arbitrary strings to reach dispatch logic
 - Endpoint paths or field names that differ from the spec in `project.md` — callers will break silently if the contract drifts
-- Response models typed as `dict` or `Any` — clients cannot reliably deserialize these
-- Inconsistent status codes: returning 200 for a resource-not-found case, or 500 for a validation error that should be 422
-- CLI commands whose flags or arguments do not parallel the API request fields — a user who knows the API should be able to predict the CLI with no surprises
-- Missing error responses on endpoints that can fail — every endpoint that reads from the file store can encounter a missing session; that case must be handled and documented in the response model
-- Extra endpoints or CLI commands beyond the spec — these expand the surface area without corresponding test coverage
-- The `mode` field typed as `str` instead of `Literal["sequential", "consolidated"]` — a plain `str` field will accept any value and never produce a 422, violating the enum validation constraint
-- Mode resolution logic placed in `core/` modules instead of at the API/CLI boundary — core functions accept an already-resolved mode string; they do not perform resolution themselves
+- A default goal silently applied when `--goal` is omitted — `--goal` is required; omitting it must be an error, not a fallback
+- Old collection/conversation endpoints left in place as public routes after the goals refactor — these expand the surface area without a corresponding goal file driving them
+- CLI flags whose names or semantics do not parallel the API request fields — a user who knows the API should be able to predict the CLI with no surprises
+- `corpus-council goals process` that exits 0 but writes no manifest or writes a malformed one — the contract is exit 0 + valid `goals_manifest.json`
 
 ### Questions I ask
 
-- If a caller sends an unknown field in the request body, does the endpoint reject it with 422 or silently ignore it?
-- Does `POST /collection/respond` correctly return `status: "complete"` and `prompt: null` when the session is done?
-- Is the `session_id` in `POST /collection/start`'s response the same `session_id` accepted by `POST /collection/respond`?
-- Can a caller resume a collection session using only the `user_id` and `session_id` returned from a prior call?
-- Does `corpus-council serve` actually start a server that responds to `GET /docs`?
-- Does `POST /conversation` with `"mode": "invalid_value"` return 422 (not 500)?
-- Does omitting the `mode` field entirely from the request body produce no error and use the config default?
-- Does `uv run corpus-council query --help` show `--mode` in the output?
+- Does `corpus-council query --help` show both `--goal` and `--mode`?
+- Does `POST /query` with `"mode": "invalid_value"` return HTTP 422 — not 500?
+- Does `POST /query` with an unknown `goal` value return 404 with `{"error": "Goal '<name>' not found"}`?
+- If a caller omits `mode` entirely from the request body, does the endpoint use the config default without error?
+- Does `corpus-council goals process` produce a `goals_manifest.json` that `corpus-council query --goal intake` can read immediately?
+- Are there any public API routes that still route on hardcoded `"collection"` or `"conversation"` strings?
