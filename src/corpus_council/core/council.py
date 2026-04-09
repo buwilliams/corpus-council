@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -7,6 +8,7 @@ from typing import Any
 import frontmatter  # type: ignore[import-untyped]
 
 from corpus_council.core.config import AppConfig
+from corpus_council.core.goals import GoalConfig
 
 _REQUIRED_FIELDS: list[str] = [
     "name",
@@ -121,4 +123,17 @@ def load_council(config: AppConfig) -> list[CouncilMember]:
     return members
 
 
-__all__ = ["CouncilMember", "load_council"]
+def load_council_for_goal(
+    goal_config: GoalConfig, personas_dir: Path
+) -> list[CouncilMember]:
+    """Load council members referenced in a goal, sorted by authority_tier ascending."""
+    sorted_refs = sorted(goal_config.council, key=lambda r: r.authority_tier)
+    members: list[CouncilMember] = []
+    for ref in sorted_refs:
+        member = _parse_member(personas_dir / ref.persona_file, personas_dir)
+        member = dataclasses.replace(member, position=ref.authority_tier)
+        members.append(member)
+    return members
+
+
+__all__ = ["CouncilMember", "load_council", "load_council_for_goal"]

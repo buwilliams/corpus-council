@@ -11,14 +11,21 @@ from prompt_toolkit.history import InMemoryHistory
 
 from corpus_council.core.collection import respond_collection, start_collection
 from corpus_council.core.config import AppConfig, load_config
+from corpus_council.core.consolidated import run_consolidated_deliberation
 from corpus_council.core.conversation import run_conversation
 from corpus_council.core.corpus import ingest_corpus
+from corpus_council.core.council import load_council_for_goal
+from corpus_council.core.deliberation import run_deliberation
 from corpus_council.core.embeddings import embed_corpus
+from corpus_council.core.goals import load_goal, process_goals
 from corpus_council.core.llm import LLMClient
+from corpus_council.core.retrieval import ChunkResult, retrieve_chunks
 from corpus_council.core.store import FileStore
 from corpus_council.core.validation import validate_id
 
 app = typer.Typer(name="corpus-council", no_args_is_help=True)
+goals_app = typer.Typer()
+app.add_typer(goals_app, name="goals")
 
 _CONFIG_PATH = Path("config.yaml")
 
@@ -31,6 +38,23 @@ def _load_config_or_exit() -> AppConfig:
         raise typer.Exit(1) from exc
     except (KeyError, ValueError) as exc:
         typer.echo(f"Config error: {exc}", err=True)
+        raise typer.Exit(1) from exc
+
+
+@goals_app.command("process")
+def goals_process() -> None:
+    """Validate and register all goal files from the configured goals directory."""
+    config = _load_config_or_exit()
+    try:
+        results = process_goals(
+            config.goals_dir, config.personas_dir, config.goals_manifest_path
+        )
+        typer.echo(
+            f"Processed {len(results)} goal(s)."
+            f" Manifest written to {config.goals_manifest_path}"
+        )
+    except (ValueError, FileNotFoundError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
 
 
@@ -81,20 +105,21 @@ def chat(
 
 @app.command()
 def query(
-    user_id: str = typer.Argument(..., help="User identifier"),
     message: str = typer.Argument(..., help="Message to send"),
+    goal: str = typer.Option(..., "--goal", help="Name of the goal to use"),
     mode: str | None = typer.Option(
         None, "--mode", help="Deliberation mode: sequential or consolidated"
     ),
 ) -> None:
-    """Send a single message and print the response, then exit."""
+    """Send a single message using a named goal and print the response, then exit."""
+    config = _load_config_or_exit()
+
     try:
-        validate_id(user_id, "user_id")
-    except ValueError as exc:
-        typer.echo(f"Invalid user_id: {exc}", err=True)
+        goal_config = load_goal(goal, config.goals_manifest_path)
+    except (FileNotFoundError, ValueError) as exc:
+        typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc
 
-    config = _load_config_or_exit()
     resolved_mode: str = mode or config.deliberation_mode
     if mode is not None and mode not in {"sequential", "consolidated"}:
         typer.echo(
@@ -102,10 +127,23 @@ def query(
             err=True,
         )
         raise typer.Exit(1)
-    store = FileStore(config.data_dir)
+
+    members = load_council_for_goal(goal_config, config.personas_dir)
+
+    chunks: list[ChunkResult] = []
+    try:
+        chunks = retrieve_chunks(message, config)
+    except Exception:  # noqa: BLE001
+        chunks = []
+
     llm = LLMClient(config)
-    result = run_conversation(user_id, message, config, store, llm, mode=resolved_mode)
-    typer.echo(result.response)
+
+    if resolved_mode == "consolidated":
+        result = run_consolidated_deliberation(message, chunks, members, llm)
+    else:
+        result = run_deliberation(message, chunks, members, llm)
+
+    typer.echo(result.final_response)
 
 
 @app.command()
