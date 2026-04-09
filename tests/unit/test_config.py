@@ -91,3 +91,64 @@ def test_load_config_raises_on_missing_required_key(tmp_path: Path) -> None:
 
     with pytest.raises(KeyError):
         load_config(config_file)
+
+
+def test_load_config_includes_goals_fields(tmp_path: Path) -> None:
+    """load_config resolves goals_dir, personas_dir, and goals_manifest_path."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "llm:\n"
+        "  provider: anthropic\n"
+        "  model: claude-3-5-haiku-20241022\n"
+        "embedding:\n"
+        "  provider: sentence-transformers\n"
+        "  model: all-MiniLM-L6-v2\n"
+        "data_dir: data\n"
+        "goals_dir: my_goals\n"
+        "personas_dir: my_personas\n"
+        "goals_manifest_path: my_manifest.json\n"
+        "chunking:\n"
+        "  max_size: 512\n"
+        "retrieval:\n"
+        "  top_k: 5\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_file)
+
+    assert isinstance(config.goals_dir, Path)
+    assert config.goals_dir.is_absolute()
+    assert config.goals_dir == (tmp_path / "my_goals").resolve()
+
+    assert isinstance(config.personas_dir, Path)
+    assert config.personas_dir.is_absolute()
+    assert config.personas_dir == (tmp_path / "my_personas").resolve()
+
+    assert isinstance(config.goals_manifest_path, Path)
+    assert config.goals_manifest_path.is_absolute()
+    assert config.goals_manifest_path == (tmp_path / "my_manifest.json").resolve()
+
+
+def test_load_config_goals_fields_use_defaults(tmp_path: Path) -> None:
+    """load_config uses defaults for goals_dir, personas_dir, goals_manifest_path."""
+    config_file = tmp_path / "config.yaml"
+    config_file.write_text(
+        "llm:\n"
+        "  provider: anthropic\n"
+        "  model: claude-3-5-haiku-20241022\n"
+        "embedding:\n"
+        "  provider: sentence-transformers\n"
+        "  model: all-MiniLM-L6-v2\n"
+        "data_dir: data\n"
+        "chunking:\n"
+        "  max_size: 512\n"
+        "retrieval:\n"
+        "  top_k: 5\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_file)
+
+    assert config.goals_dir == (tmp_path / "goals").resolve()
+    assert config.personas_dir == (tmp_path / "council").resolve()
+    assert config.goals_manifest_path == (tmp_path / "goals_manifest.json").resolve()
