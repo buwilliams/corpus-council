@@ -167,6 +167,8 @@ def test_config(
     data_dir: Path,
 ) -> AppConfig:
     """Return an AppConfig with all paths pointing at tmp_path-based directories."""
+    goals_dir = tmp_path / "goals"
+    goals_dir.mkdir(parents=True, exist_ok=True)
     return AppConfig(
         llm_provider="anthropic",
         llm_model="claude-haiku-4-5-20251001",
@@ -180,6 +182,9 @@ def test_config(
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",
+        goals_dir=goals_dir,
+        personas_dir=council_dir,
+        goals_manifest_path=tmp_path / "goals_manifest.json",
     )
 
 

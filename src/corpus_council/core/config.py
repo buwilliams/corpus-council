@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,11 @@ class AppConfig:
     retrieval_top_k: int
     chroma_collection: str = "corpus"
     deliberation_mode: str = "sequential"
+    goals_dir: Path = dataclasses.field(default_factory=lambda: Path("goals"))
+    personas_dir: Path = dataclasses.field(default_factory=lambda: Path("council"))
+    goals_manifest_path: Path = dataclasses.field(
+        default_factory=lambda: Path("goals_manifest.json")
+    )
 
 
 def _resolve_path(config_dir: Path, value: Any) -> Path:
@@ -127,6 +133,12 @@ def load_config(path: str | Path) -> AppConfig:
         )
     deliberation_mode: str = deliberation_mode_raw
 
+    goals_dir = _resolve_path(config_dir, data.get("goals_dir", "goals"))
+    personas_dir = _resolve_path(config_dir, data.get("personas_dir", "council"))
+    goals_manifest_path = _resolve_path(
+        config_dir, data.get("goals_manifest_path", "goals_manifest.json")
+    )
+
     return AppConfig(
         llm_provider=llm_provider,
         llm_model=llm_model,
@@ -141,6 +153,9 @@ def load_config(path: str | Path) -> AppConfig:
         retrieval_top_k=retrieval_top_k,
         chroma_collection=chroma_collection,
         deliberation_mode=deliberation_mode,
+        goals_dir=goals_dir,
+        personas_dir=personas_dir,
+        goals_manifest_path=goals_manifest_path,
     )
 
 
