@@ -16,10 +16,9 @@ config = load_config(Path("config.yaml"))
 store = FileStore(config.data_dir)
 llm = LLMClient(config)
 
-from corpus_council.api.routers import collection, conversation, corpus  # noqa: E402
+from corpus_council.api.routers import corpus, query  # noqa: E402
 
-app.include_router(conversation.router)
-app.include_router(collection.router)
+app.include_router(query.router)
 app.include_router(corpus.router)
 
 

@@ -51,107 +51,66 @@ async def client(  # type: ignore[override]
         yield c  # type: ignore[misc]
 
 
-async def test_post_conversation_returns_200(client: httpx.AsyncClient) -> None:
+async def test_post_query_returns_200(client: httpx.AsyncClient) -> None:
     response = await client.post(
-        "/conversation", json={"user_id": "user0001", "message": "Hello"}
+        "/query", json={"goal": "test-goal", "message": "What is AI?"}
     )
     assert response.status_code == 200
     body = response.json()
     assert "response" in body
-    assert "user_id" in body
-    assert body["user_id"] == "user0001"
+    assert "goal" in body
+    assert body["goal"] == "test-goal"
 
 
-async def test_post_conversation_rejects_extra_fields(
-    client: httpx.AsyncClient,
-) -> None:
+async def test_post_query_unknown_goal_returns_404(client: httpx.AsyncClient) -> None:
     response = await client.post(
-        "/conversation",
-        json={"user_id": "user0001", "message": "hi", "foo": "bar"},
+        "/query", json={"goal": "nonexistent-goal", "message": "hello"}
+    )
+    assert response.status_code == 404
+    body = response.json()
+    assert "detail" in body
+
+
+async def test_post_query_invalid_mode_returns_422(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/query",
+        json={"goal": "test-goal", "message": "hello", "mode": "invalid_mode"},
     )
     assert response.status_code == 422
 
 
-async def test_post_collection_start_returns_201(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        "/collection/start", json={"user_id": "user0001", "plan_id": "signup"}
-    )
-    assert response.status_code == 201
-    body = response.json()
-    assert "session_id" in body
-    assert "first_prompt" in body
-
-
-async def test_post_collection_start_returns_404_for_missing_plan(
+async def test_post_query_mode_consolidated_returns_200(
     client: httpx.AsyncClient,
 ) -> None:
     response = await client.post(
-        "/collection/start",
-        json={"user_id": "user0001", "plan_id": "nonexistent"},
-    )
-    assert response.status_code == 404
-    body = response.json()
-    assert "error" in body
-
-
-async def test_post_collection_respond_returns_200(client: httpx.AsyncClient) -> None:
-    start = await client.post(
-        "/collection/start", json={"user_id": "user0001", "plan_id": "signup"}
-    )
-    assert start.status_code == 201
-    session_id = start.json()["session_id"]
-
-    response = await client.post(
-        "/collection/respond",
-        json={
-            "user_id": "user0001",
-            "session_id": session_id,
-            "message": "Alice",
-        },
+        "/query",
+        json={"goal": "test-goal", "message": "hello", "mode": "consolidated"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert "status" in body
-    assert "prompt" in body
-    assert "collected" in body
+    assert "response" in body
+    assert "goal" in body
 
 
-async def test_post_collection_respond_returns_404_for_missing_session(
+async def test_post_query_mode_sequential_returns_200(
     client: httpx.AsyncClient,
 ) -> None:
     response = await client.post(
-        "/collection/respond",
-        json={
-            "user_id": "user0001",
-            "session_id": "fake-session-id",
-            "message": "hello",
-        },
+        "/query",
+        json={"goal": "test-goal", "message": "hello", "mode": "sequential"},
     )
-    assert response.status_code == 404
-
-
-async def test_get_collection_status_returns_200(client: httpx.AsyncClient) -> None:
-    start = await client.post(
-        "/collection/start", json={"user_id": "user0001", "plan_id": "signup"}
-    )
-    assert start.status_code == 201
-    session_id = start.json()["session_id"]
-
-    response = await client.get(f"/collection/user0001/{session_id}")
     assert response.status_code == 200
     body = response.json()
-    assert "user_id" in body
-    assert "session_id" in body
-    assert "status" in body
-    assert "collected" in body
-    assert "created_at" in body
+    assert "response" in body
+    assert "goal" in body
 
 
-async def test_get_collection_status_returns_404_for_missing_session(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.get("/collection/user0001/fake-session-id")
-    assert response.status_code == 404
+async def test_post_query_rejects_extra_fields(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/query",
+        json={"goal": "test-goal", "message": "hi", "foo": "bar"},
+    )
+    assert response.status_code == 422
 
 
 async def test_post_corpus_ingest_returns_200(
@@ -174,34 +133,3 @@ async def test_post_corpus_embed_returns_200(
     assert response.status_code == 200
     body = response.json()
     assert "vectors_created" in body
-
-
-async def test_post_conversation_invalid_user_id_returns_422(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.post(
-        "/conversation", json={"user_id": "ab", "message": "hello"}
-    )
-    assert response.status_code == 422
-
-
-async def test_post_conversation_mode_invalid_returns_422(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.post(
-        "/conversation",
-        json={"user_id": "testuser", "message": "hi", "mode": "invalid_mode"},
-    )
-    assert response.status_code == 422
-
-
-async def test_post_conversation_mode_consolidated_returns_200(
-    client: httpx.AsyncClient,
-) -> None:
-    response = await client.post(
-        "/conversation",
-        json={"user_id": "testuser", "message": "hi", "mode": "consolidated"},
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert "response" in body

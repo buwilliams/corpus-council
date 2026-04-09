@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from corpus_council.core.config import AppConfig
+from corpus_council.core.goals import process_goals
 from corpus_council.core.store import FileStore
 
 
@@ -158,6 +159,32 @@ def data_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
+def goals_dir(tmp_path: Path, council_dir: Path) -> Path:
+    """Write a test-goal.md to tmp_path/goals/ and generate the manifest."""
+    d = tmp_path / "goals"
+    d.mkdir(parents=True, exist_ok=True)
+
+    (d / "test-goal.md").write_text(
+        "---\n"
+        "desired_outcome: Provide a well-reasoned answer to the user's question\n"
+        "corpus_path: corpus\n"
+        "council:\n"
+        "  - persona_file: synthesizer.md\n"
+        "    authority_tier: 1\n"
+        "  - persona_file: analyst.md\n"
+        "    authority_tier: 2\n"
+        "---\n"
+        "Answer the user's question using the available corpus context.\n",
+        encoding="utf-8",
+    )
+
+    manifest_path = tmp_path / "goals_manifest.json"
+    process_goals(d, council_dir, manifest_path)
+
+    return d
+
+
+@pytest.fixture
 def test_config(
     tmp_path: Path,
     corpus_dir: Path,
@@ -165,10 +192,9 @@ def test_config(
     plans_dir: Path,
     templates_dir: Path,
     data_dir: Path,
+    goals_dir: Path,
 ) -> AppConfig:
     """Return an AppConfig with all paths pointing at tmp_path-based directories."""
-    goals_dir = tmp_path / "goals"
-    goals_dir.mkdir(parents=True, exist_ok=True)
     return AppConfig(
         llm_provider="anthropic",
         llm_model="claude-haiku-4-5-20251001",

@@ -77,3 +77,16 @@ class CorpusIngestResponse(BaseModel):
 class CorpusEmbedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vectors_created: int
+
+
+class QueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str
+    goal: str
+    mode: Literal["sequential", "consolidated"] | None = None
+
+
+class QueryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    response: str
+    goal: str
