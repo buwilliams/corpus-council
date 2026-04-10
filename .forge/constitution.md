@@ -25,7 +25,6 @@
 
 ## Out of Scope — Forever
 
-- Building a frontend or chat UI — Corpus Council's interfaces are the API and CLI only.
 - Bundling or hard-wiring any single deployment's corpus or council (FTA or otherwise) into the core platform.
 - User authentication, authorization, or session management — the calling platform owns this.
 - Training or fine-tuning models — Corpus Council works with pre-trained LLMs via API only.

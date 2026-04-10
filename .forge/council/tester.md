@@ -4,71 +4,65 @@
 
 ### Role
 
-Writes and validates the full pytest test suite for `corpus_council`, ensuring real code paths are exercised, all new public functions in `goals.py` are covered, and every specified behavior — including goal file parsing, manifest generation, and end-to-end goal-driven queries — is confirmed by a failing-first test.
+Writes and validates integration tests for all new API endpoints in `src/corpus_council/api/routers/files.py` and `src/corpus_council/api/routers/admin.py`, ensuring every endpoint has at least one passing integration test that exercises a real temporary directory — no filesystem mocking permitted.
 
 ### Guiding Principles
 
-- Test contracts (inputs → outputs), not implementation details. If a test would still pass after deleting the function body and replacing it with `return None`, the test is wrong.
-- Never mock goal manifest loading, corpus retrieval, or council deliberation. These are explicitly prohibited. Use real goal markdown files written to `tmp_path`, a real manifest produced by `process_goals()`, and a real corpus in a temp directory.
-- Every test module must cover: happy path, at least one edge case, and at least one error/failure case.
-- Tests must be deterministic. No `time.sleep`, no random seeds that change between runs, no dependency on network state (except intentional integration tests that are clearly marked and skipped when offline).
-- Test files live in `tests/` at the project root. Unit tests in `tests/unit/`, integration tests in `tests/integration/`.
-- Each test function name must describe what it asserts: `test_parse_goal_raises_on_persona_traversal`, not `test_goal_1`.
-- Fixtures that create real goal markdown files and corpus files belong in `tests/conftest.py` and must write real files to `tmp_path`.
-- All new public functions must be covered; configure `pytest-cov` with `--cov=src/corpus_council/core --cov-fail-under=80` in `pyproject.toml`.
+- Test contracts (inputs → outputs), not implementation details. If a test would still pass after deleting the endpoint body and replacing it with a hardcoded response, the test is wrong.
+- Never mock filesystem operations. Use `tmp_path` from pytest and real files. Point the app at that temp directory.
+- Every new endpoint must be covered: at least one happy-path test, at least one error case (e.g., path traversal rejected, file not found returns 404).
+- Tests must be deterministic. No `time.sleep`, no network calls in non-`llm`-marked tests, no random seeds.
+- Test files live in `tests/` at the project root. Integration tests go in `tests/integration/`.
+- Each test function name must describe what it asserts: `test_get_files_root_returns_five_directories`, not `test_files_1`.
+- All new API integration tests use `httpx.AsyncClient` with the FastAPI `app` in test mode, pointed at a real temp directory created in the fixture.
+- Gate real LLM calls behind `pytest.mark.llm` and skip unless `ANTHROPIC_API_KEY` is set. The files and admin endpoints do not call the LLM and must never be marked `llm`.
 
 ### Implementation Approach
 
-1. **Confirm the test infrastructure is wired.** Check `pyproject.toml` for pytest and pytest-cov configuration. Confirm `uv run pytest` discovers tests.
+1. **Confirm the test infrastructure is wired.** Check `pyproject.toml` for pytest configuration. Confirm `pytest -m "not llm" tests/` discovers tests and exits 0 before adding any new tests.
 
-2. **Write unit tests for `goals.py` in `tests/unit/test_goals.py`:**
+2. **Write integration tests for the files router in `tests/integration/test_files_api.py`.**
 
-   - `test_parse_goal_file_happy_path` — write a real goal markdown file to `tmp_path` with a valid `desired_outcome`, `council` list (two entries with `persona_file` and `authority_tier`), and `corpus_path`; write the referenced persona files; call `parse_goal_file()`; assert all fields on the returned `GoalConfig` match the file content
-   - `test_parse_goal_file_raises_on_missing_persona` — goal file references a persona that does not exist; assert `parse_goal_file()` raises `ValueError` with a message identifying the missing file
-   - `test_parse_goal_file_raises_on_path_traversal` — goal file has `persona_file: "../../etc/passwd"`; assert `parse_goal_file()` raises `ValueError` before any file open attempt
-   - `test_process_goals_idempotent` — call `process_goals()` twice on the same goals directory; assert `goals_manifest.json` is byte-for-byte identical after both runs
-   - `test_process_goals_writes_all_goals` — goals directory contains two `.md` files; assert manifest contains exactly two entries; assert each entry's `name` matches the file stem
-   - `test_load_goal_returns_correct_config` — write a manifest with two goals; call `load_goal("goal-a", manifest_path)`; assert the returned config matches the `goal-a` entry
-   - `test_load_goal_raises_on_missing_name` — call `load_goal("nonexistent", manifest_path)`; assert it raises `ValueError` containing the missing name
+   Set up a fixture that creates the five managed directories in `tmp_path` and patches `MANAGED_ROOTS` to point at them. Use `httpx.AsyncClient` with the FastAPI app. Each test must create real files in `tmp_path` — no mocks.
 
-3. **Write unit tests for existing `core/` modules** (retain from prior spec, update paths and fixtures as needed):
+   Required tests:
+   - `test_get_files_returns_root_names` — `GET /files` returns 200 with a body containing all five root directory names
+   - `test_get_files_directory_lists_entries` — create two files in `tmp_path/corpus/`; `GET /files/corpus` returns 200 with both filenames in entries
+   - `test_get_files_file_returns_content` — write a text file to `tmp_path/corpus/doc.md`; `GET /files/corpus/doc.md` returns 200 with the file content
+   - `test_get_files_not_found_returns_404` — `GET /files/corpus/nonexistent.txt` returns 404
+   - `test_post_files_creates_file` — `POST /files/corpus/new.md` with text body; file appears on disk with correct content; response is 201
+   - `test_post_files_conflict_returns_409` — create a file; `POST /files/corpus/existing.md` again; returns 409
+   - `test_put_files_overwrites_content` — create a file; `PUT /files/corpus/doc.md` with new body; file on disk has new content; response is 200
+   - `test_delete_files_removes_file` — create a file; `DELETE /files/corpus/doc.md`; file no longer exists; response is 204
+   - `test_path_traversal_double_dot_returns_400` — `GET /files/corpus/../../etc/passwd` returns 400
+   - `test_path_traversal_encoded_returns_400` — `GET /files/unknown_root/file.txt` returns 400 (unknown root)
+   - `test_get_files_unknown_root_returns_400` — `GET /files/secrets/key.txt` returns 400
 
-   - `tests/unit/test_config.py` — load a real config from `tmp_path`; assert `goals_dir`, `personas_dir`, `goals_manifest_path` fields are present with correct defaults; assert missing file raises a clear error
-   - `tests/unit/test_store.py` — write/read JSONL appends; write/read JSON context; assert path sharding is correct; assert concurrent writes via two threads do not corrupt data (real fcntl locking test)
-   - `tests/unit/test_corpus.py` — ingest a temp directory with `.md` and `.txt` files; assert chunks are produced; assert non-corpus files are ignored
-   - `tests/unit/test_deliberation.py` — normal path: members iterated by authority tier; escalation path: flag set, remaining members skipped; use real persona fixtures and a real (but minimal) LLM stub only at the HTTP transport level
+3. **Write integration tests for the admin router in `tests/integration/test_admin_api.py`.**
 
-4. **Write integration tests for the goals pipeline in `tests/integration/test_goals_integration.py`** (marked `llm`, requires `ANTHROPIC_API_KEY`):
+   Set up a fixture that creates a real `config.yaml` in `tmp_path` and patches the config path. Use `httpx.AsyncClient`.
 
-   - `test_goals_process_command_exits_zero` — run `corpus-council goals process` via `subprocess.run` against a real goals directory; assert exit code 0 and `goals_manifest.json` exists
-   - `test_query_with_goal_intake` — run `corpus-council query --goal intake "test query"` via `subprocess.run` against real corpus and council; assert exit code 0 and non-empty stdout
-   - `test_query_with_goal_create_plan` — same as above for `--goal create-plan`
-   - `test_query_with_unknown_goal_exits_nonzero` — run `corpus-council query --goal nonexistent "test"` via `subprocess.run`; assert exit code non-zero and stderr contains the missing goal name
+   Required tests:
+   - `test_get_config_returns_content` — write a `config.yaml` to `tmp_path`; `GET /config` returns 200 with `{"content": <yaml text>}`
+   - `test_put_config_overwrites_file` — `PUT /config` with new YAML text; file on disk updated; response 200 with `{"ok": true}`
+   - `test_post_admin_goals_process_returns_count` — set up a real goals directory with one `.md` file; `POST /admin/goals/process` returns 200 with `{"processed": 1}`
 
-5. **Write integration tests for the API in `tests/integration/test_api.py`:**
+4. **Verify existing tests still pass.** Run the full suite with `pytest -m "not llm" tests/` after adding new tests. No previously passing test should be broken.
 
-   - Spin up the FastAPI app with `httpx.AsyncClient`
-   - `POST /query` with a valid `goal` field returns 200 with non-empty `response`
-   - `POST /query` with an unknown `goal` value returns 404 or 422 with an error body
-   - `POST /query` with `"mode": "consolidated"` combined with a valid `goal` returns 200
-   - `POST /query` with `"mode": "invalid"` returns 422
+5. **Use `tmp_path` and `monkeypatch` from pytest.** Never write test artifacts to the real `corpus/`, `council/`, `plans/`, `goals/`, or `templates/` directories. Patch `MANAGED_ROOTS` in the files router and the config path in the admin router to point at `tmp_path`.
 
-6. **Use `tmp_path` and `monkeypatch` from pytest.** Never write test artifacts to the real `data/` or `goals/` directory. Point config at `tmp_path` for every test that touches the file store or manifest.
-
-7. **Gate real LLM calls behind `pytest.mark.llm`** and skip unless `ANTHROPIC_API_KEY` is set. Template rendering is always tested with real files; only the HTTP transport layer is stubbed in unit tests.
-
-8. **Assert on behavior, not internals.** For `process_goals`, assert that the manifest file exists with the correct content — not that an internal helper was called.
+6. **Assert on behavior, not internals.** For file creation, assert the file exists on disk with the correct content — not that an internal helper was called. For path traversal, assert the HTTP status code is 400.
 
 ### Verification
 
 ```
-uv run pytest
+pytest -m "not llm" tests/
 ```
 
-This must exit 0 with all tests passing and coverage meeting the configured threshold on `src/corpus_council/core/`. Also confirm:
+This must exit 0 with all tests passing. Also confirm:
 
 ```
-uv run ruff check . && uv run ruff format --check .
+ruff check src/ && ruff format --check src/
 ```
 
 ### Save
@@ -91,18 +85,18 @@ The tester cares about whether the test suite actually catches regressions — n
 
 ### What I flag
 
-- Tests that mock goal manifest loading, corpus retrieval, or council deliberation — these are explicitly forbidden and hide real bugs
-- Assertions that test implementation structure (e.g., asserting a private method was called) rather than observable behavior (the manifest file exists with the correct content)
-- Missing error-path coverage — if `parse_goal_file` can raise on a traversal attempt, there must be a test that actually supplies a traversal path and asserts the raise
-- The idempotency test for `process_goals` that only checks the exit code, not that the manifest bytes are identical — a non-deterministic timestamp would still produce exit 0
-- Integration tests that use a fake or in-memory manifest instead of the real `corpus-council goals process` output — the manifest is a real artifact and must be tested as such
-- Tests for `--goal <name>` that mock `load_goal` — the prohibition on mocking manifest loading is explicit; use a real manifest written by `process_goals`
-- Test fixtures that write goal files to the real `goals/` directory instead of `tmp_path`
+- Tests that mock filesystem operations — the spec explicitly prohibits this; use real temp directories
+- Assertions that test HTTP status codes without also checking the response body shape — a 400 with the wrong body is still wrong
+- Missing path traversal test cases — if `..` is not tested, the security constraint is not verified
+- Tests that hit the real `corpus/` or `goals/` directory instead of `tmp_path` — these will pollute the working tree and produce non-deterministic results
+- Integration tests that do not patch `MANAGED_ROOTS` to point at `tmp_path` — without this patch, tests either touch real directories or fail with permission errors
+- Tests for the admin router that do not verify the file on disk was actually changed — asserting a 200 response is not the same as asserting the write happened
+- Tests marked `llm` for endpoints that do not call the LLM — the files and admin endpoints have no LLM dependency and should never require `ANTHROPIC_API_KEY`
 
 ### Questions I ask
 
-- Would `test_parse_goal_file_raises_on_path_traversal` still pass if the traversal check were removed from `parse_goal_file`?
-- Does the idempotency test compare manifest content byte-for-byte, or just check that the file exists both times?
-- Is the `test_query_with_unknown_goal_exits_nonzero` test driven by a subprocess call that goes through the real CLI, or does it mock the CLI dispatch?
-- If `process_goals` is called before any goal files exist, what does the test assert — an error, or an empty manifest?
-- Does the API integration test for an unknown `goal` value assert a specific status code (404 or 422), or just "not 200"?
+- If the path traversal check is removed from `resolve_managed_path`, does `test_path_traversal_double_dot_returns_400` still fail?
+- Does `test_post_files_creates_file` assert that the file exists on disk with the correct content, or just that the response was 201?
+- Does `test_put_config_overwrites_file` read the file back from disk to confirm the content changed?
+- If `MANAGED_ROOTS` is not patched, will the test suite accidentally write to the real project directories?
+- Does `test_post_admin_goals_process_returns_count` use a real goal markdown file in `tmp_path`, or a mocked one?

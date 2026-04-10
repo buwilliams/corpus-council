@@ -4,156 +4,86 @@
 
 ### Role
 
-Owns the flat-file store design, 2-level directory sharding, fcntl locking, JSONL/JSON schemas, corpus chunk metadata storage, ChromaDB integration, and the `goals_manifest.json` artifact produced by the `goals process` step.
+Owns the flat-file store design, sharding strategy, fcntl locking, JSONL/JSON schemas, and ChromaDB integration in `corpus_council`, and ensures the new files router and admin router perform all file I/O safely and consistently with established patterns — including atomic writes for `config.yaml`.
 
 ### Guiding Principles
 
-- All user data writes must be atomic from the caller's perspective. Use fcntl `LOCK_EX` before every write and release it after fsync. Never leave a partially-written file visible to a reader.
-- All operations on the file store must be idempotent where possible. Ingesting the same corpus file twice must not create duplicate chunks. Running `goals process` twice must produce the same manifest.
-- Sharding is non-negotiable: user data lives at `data/users/{user_id[0:2]}/{user_id[2:4]}/{user_id}/`. A `user_id` shorter than 4 characters must raise a clear `ValueError` — never silently produce a wrong path.
-- ChromaDB is the only non-flat-file store and is used exclusively for embedding vectors. No goal configs, no session data, no persona content goes into ChromaDB.
+- All user data writes must be atomic from the caller's perspective. Use fcntl `LOCK_EX` before every write and release it after fsync. For files that must be replaced atomically, write to a `.tmp` sibling and use `Path.replace()`.
+- All operations on the file store must be idempotent where possible. Running `goals process` twice must produce the same manifest. Ingesting the same corpus file twice must not create duplicate chunks.
+- The five managed directories (corpus, council, plans, goals, templates) are filesystem roots that the files router is allowed to read and write. The data directory (`data/`) is a separate runtime store — it must never appear in `MANAGED_ROOTS`.
+- ChromaDB is the only non-flat-file store and is used exclusively for embedding vectors. No session data, no config snapshots, no goal configs go into ChromaDB.
 - Schema changes to any JSONL or JSON file must be backward-compatible. If a new field is added, existing files without that field must still load correctly (use `dict.get()` with defaults, not `dict[key]`).
-- Never write secrets or API keys to any file — not `config.yaml`, not chunk metadata, not session files, not `goals_manifest.json`.
-- `goals_manifest.json` is a deterministic, idempotent output. Its content is derived entirely from the goal markdown files; it must not include timestamps or non-deterministic values that would cause re-runs to produce different bytes.
+- `config.yaml` is written by `PUT /config`. This write must be atomic: write to `config.yaml.tmp`, then `Path.replace()` to `config.yaml`. A crash mid-write must leave the previous valid config intact.
+- `goals_manifest.json` is a deterministic, idempotent output. Its content is derived entirely from the goal markdown files; it must not include timestamps or non-deterministic values.
 
 ### Implementation Approach
 
-1. **Implement `FileStore` in `src/corpus_council/core/store.py`.**
+1. **Confirm `FileStore` in `src/corpus_council/core/store.py` is the canonical pattern for user data I/O.** The new files router and admin router must not introduce ad-hoc `open()` calls for runtime data. Text file read/write in the managed directories (corpus, council, plans, goals, templates) is a separate concern from `FileStore` — these are direct filesystem reads/writes on project content, not runtime user data. They do not need to go through `FileStore`, but they must still use atomic write patterns for any mutation.
 
-   Path construction:
+2. **Implement atomic write for `PUT /config` in `admin.py`:**
+
    ```python
-   def user_dir(self, user_id: str) -> Path:
-       if len(user_id) < 4:
-           raise ValueError(f"user_id must be at least 4 characters, got: {user_id!r}")
-       return self.base / "users" / user_id[0:2] / user_id[2:4] / user_id
+   from pathlib import Path
+
+   def write_config(content: str, config_path: Path) -> None:
+       tmp = config_path.with_suffix(".tmp")
+       tmp.write_text(content, encoding="utf-8")
+       tmp.replace(config_path)
    ```
 
-   JSONL append (turn logs):
+   This pattern is consistent with `FileStore.write_json()`. A partial write never corrupts the live config.
+
+3. **Implement safe directory listing for `GET /files/{path}` in `files.py`.** When the resolved path is a directory, return an entry list that includes `name`, `type` (`"file"` or `"directory"`), and `size` (file size in bytes; `None` for directories). Do not recurse — return only the immediate children.
+
    ```python
-   def append_jsonl(self, path: Path, record: dict) -> None:
-       path.parent.mkdir(parents=True, exist_ok=True)
-       with open(path, "a") as f:
-           fcntl.flock(f, fcntl.LOCK_EX)
-           try:
-               f.write(json.dumps(record) + "\n")
-               f.flush()
-               os.fsync(f.fileno())
-           finally:
-               fcntl.flock(f, fcntl.LOCK_UN)
+   def list_directory(path: Path) -> list[dict]:
+       entries = []
+       for child in sorted(path.iterdir()):
+           entries.append({
+               "name": child.name,
+               "type": "file" if child.is_file() else "directory",
+               "size": child.stat().st_size if child.is_file() else None,
+           })
+       return entries
    ```
 
-   JSON read/write (context and session files):
+   Sorting is required for deterministic output. `os.listdir()` order is filesystem-dependent.
+
+4. **Implement text file read for `GET /files/{path}` (file case).** Read with `path.read_text(encoding="utf-8")`. If the file is not valid UTF-8, return HTTP 400 with `{"error": "File is not valid UTF-8 text"}`. Do not attempt to serve binary files.
+
+5. **Implement file creation for `POST /files/{path}`.** Check that the file does not already exist before writing. Use `path.parent.mkdir(parents=True, exist_ok=True)` to create intermediate directories within the managed root.
+
    ```python
-   def write_json(self, path: Path, data: dict) -> None:
-       path.parent.mkdir(parents=True, exist_ok=True)
-       tmp = path.with_suffix(".tmp")
-       with open(tmp, "w") as f:
-           fcntl.flock(f, fcntl.LOCK_EX)
-           try:
-               json.dump(data, f, indent=2)
-               f.flush()
-               os.fsync(f.fileno())
-           finally:
-               fcntl.flock(f, fcntl.LOCK_UN)
-       tmp.replace(path)  # atomic rename
-
-   def read_json(self, path: Path) -> dict:
-       if not path.exists():
-           return {}
-       with open(path, "r") as f:
-           fcntl.flock(f, fcntl.LOCK_SH)
-           try:
-               return json.load(f)
-           finally:
-               fcntl.flock(f, fcntl.LOCK_UN)
+   if path.exists():
+       raise HTTPException(status_code=409, detail="File already exists")
+   path.parent.mkdir(parents=True, exist_ok=True)
+   path.write_text(content, encoding="utf-8")
    ```
 
-   JSONL read:
-   ```python
-   def read_jsonl(self, path: Path) -> list[dict]:
-       if not path.exists():
-           return []
-       records = []
-       with open(path, "r") as f:
-           fcntl.flock(f, fcntl.LOCK_SH)
-           try:
-               for line in f:
-                   line = line.strip()
-                   if line:
-                       records.append(json.loads(line))
-           finally:
-               fcntl.flock(f, fcntl.LOCK_UN)
-       return records
-   ```
+6. **Implement file overwrite for `PUT /files/{path}`.** Do not use atomic rename here — for text content files in the managed directories, a direct write is acceptable. If atomic behavior is required in a future task, it can be added then.
 
-2. **Define the `goals_manifest.json` schema.** This file is written by `process_goals()` and read by `load_goal()`. Its structure:
+7. **Implement file deletion for `DELETE /files/{path}`.** Use `path.unlink()`. Do not delete directories — return 400 if the path is a directory.
 
-   ```json
-   [
-     {
-       "name": "intake",
-       "desired_outcome": "...",
-       "council": [
-         { "persona_file": "council/advisor.md", "authority_tier": 1 },
-         { "persona_file": "council/analyst.md", "authority_tier": 2 }
-       ],
-       "corpus_path": "corpus/intake"
-     }
-   ]
-   ```
+8. **Confirm `goals_manifest.json` is written atomically by `process_goals()`.** Verify the existing implementation uses the `.tmp` rename pattern. If it does not, fix it. The admin router's `POST /admin/goals/process` calls `process_goals()` — it does not re-implement the write logic.
 
-   - Array of goal objects, sorted by `name` ascending for deterministic output.
-   - No timestamps, UUIDs, or any other non-deterministic values in the manifest.
-   - Written with `json.dump(goals, f, indent=2, sort_keys=True)` to guarantee stable output across runs.
-   - `process_goals()` must write this file atomically via a `.tmp` rename (same pattern as `write_json` above).
+9. **Ensure all `Path` objects come from config or `MANAGED_ROOTS`, never hardcoded strings.** `store.base`, `config.corpus_dir`, `config.personas_dir`, `config.goals_dir`, `config.goals_manifest_path`, and `config.templates_dir` are all `Path` values loaded from `config.yaml`.
 
-3. **Implement corpus chunk storage.** After chunking in `corpus.py`, persist each chunk as a flat JSON file under `data/chunks/{source_hash}/{chunk_index}.json`:
-   ```json
-   {
-     "chunk_id": "uuid",
-     "source_file": "relative/path/to/file.md",
-     "source_hash": "sha256 of file content",
-     "chunk_index": 0,
-     "text": "chunk content",
-     "char_start": 0,
-     "char_end": 512
-   }
-   ```
-   Use `source_hash` to detect duplicate ingestion. If a chunk file for a given `source_hash` + `chunk_index` already exists, skip it.
-
-4. **Implement ChromaDB integration in `embeddings.py`.** Create the collection with the name from `config.yaml`. Store chunk vectors with `chunk_id` as the document ID and `source_file` + `chunk_index` as metadata. On re-embed of an already-indexed chunk, use `collection.upsert()` — never `add()` unconditionally.
-
-5. **Use `data/embeddings/` as the ChromaDB persist directory.** Pass it to `chromadb.PersistentClient(path=str(config.data_dir / "embeddings"))`.
-
-6. **Ensure all `Path` objects come from config, never hardcoded strings.** `store.base`, `config.corpus_dir`, `config.personas_dir`, `config.goals_dir`, `config.goals_manifest_path`, and `config.templates_dir` are all `Path` values loaded from `config.yaml`.
-
-7. **Confirm no new storage schemas are needed for consolidated vs. sequential mode.** The `--mode` flag is orthogonal to goals. Both modes produce a `DeliberationResult` written to the same JSONL schema. No new file structures are required.
+10. **Confirm no new storage schemas are needed for the files or admin routers.** These routers read and write existing project content files — they do not introduce new data schemas.
 
 ### Verification
 
 ```
-uv run ruff check .
-uv run ruff format --check .
-uv run mypy src/
-uv run pytest tests/unit/test_store.py tests/unit/test_corpus.py tests/unit/test_goals.py
-uv run pytest
+ruff check src/
+ruff format --check src/
+pyright src/
+pytest -m "not llm" tests/
 ```
 
-Manually confirm sharding:
-```
-uv run python -c "
-from corpus_council.core.store import FileStore
-from pathlib import Path
-s = FileStore(Path('/tmp/test_data'))
-print(s.user_dir('abc123ef'))
-# Expected: /tmp/test_data/users/ab/c1/abc123ef
-"
-```
-
-Manually confirm manifest idempotency:
-```
-corpus-council goals process && corpus-council goals process
-# goals_manifest.json must be identical byte-for-byte after both runs
+Manually confirm atomic config write:
+```bash
+# Interrupt a PUT /config mid-write (simulate) — previous config.yaml must still be valid
+# Verify no config.yaml.tmp file left behind after a successful write
+ls config.yaml.tmp 2>/dev/null && echo "FAIL: tmp file left behind" || echo "OK"
 ```
 
 ### Save
@@ -172,22 +102,22 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The data-engineer cares about data integrity, schema consistency, and whether the file store — including the goals manifest — will survive concurrent access and re-runs without corrupting or duplicating data.
+The data-engineer cares about data integrity, schema consistency, and whether file writes — including `config.yaml` and managed content files — survive concurrent access and process interruption without corruption.
 
 ### What I flag
 
-- Direct `open()` calls on user data paths outside of `FileStore` — these bypass fcntl locking and will corrupt data under concurrent access
-- `goals_manifest.json` written without an atomic rename — a crash mid-write corrupts the manifest and breaks all downstream `--goal` queries
-- Non-deterministic manifest output (timestamps, UUIDs, or unsorted arrays) — running `goals process` twice must produce identical bytes; non-determinism breaks reproducibility
-- Corpus ingestion that does not check for existing chunks before writing — re-running `ingest` on the same corpus will duplicate all chunks and vector embeddings
-- ChromaDB `add()` calls without checking for existing IDs — will throw on re-embed of an already-indexed corpus
-- User paths constructed with string concatenation instead of the `FileStore.user_dir()` method — easy to produce wrong shard paths silently
-- Any new file schema or ChromaDB collection proposed to support the goals model beyond `goals_manifest.json` — the goals model is configuration, not runtime data; goal configs are read-only artifacts produced by `process_goals` and consumed by `load_goal`
+- `config.yaml` written with a direct `open(..., "w")` instead of an atomic `.tmp` + `replace()` — a crash mid-write leaves a truncated config that breaks all subsequent server starts
+- Directory listing that uses `os.listdir()` without sorting — non-deterministic order makes frontend behavior dependent on filesystem state
+- Binary file reads in `GET /files/{path}` that return raw bytes in a JSON string — base64 is not in scope; reject non-UTF-8 files with 400
+- `PUT /files/{path}` that creates intermediate directories outside the resolved managed root — a path like `corpus/new_subdir/../../evil/file.txt` that passes path validation could still create directories in unexpected locations if the mkdir logic is wrong
+- `POST /admin/goals/process` that re-implements manifest writing instead of calling the existing `process_goals()` — divergent write logic means the manifest format can drift
+- The `data/` directory appearing in `MANAGED_ROOTS` — the runtime data store must never be exposed through the files router
+- Non-deterministic directory listing order causing frontend file tree to reorder on each page load
 
 ### Questions I ask
 
-- If `corpus-council goals process` is interrupted mid-write, is the previous valid manifest still intact when the command is re-run?
-- Does re-running `corpus-council goals process` on the same goals directory produce byte-for-byte identical `goals_manifest.json` content?
-- Does re-running `corpus-council ingest` on the same directory produce the same number of chunks as the first run, or does it double them?
-- Are all `Path` values for goals and persona directories derived from config, or are there hardcoded `"goals/"` or `"council/"` strings in the source?
-- Is `goals_manifest.json` sorted deterministically (by goal name), or does its order depend on filesystem directory iteration order?
+- If the server process is killed during `PUT /config`, is the previous `config.yaml` still intact and parseable?
+- Does `GET /files/corpus/` return entries in sorted order on all filesystems?
+- Does `POST /files/corpus/deep/new.md` create the `deep/` subdirectory within `corpus/`, and does the path validation confirm the created directory stays within `corpus/`?
+- Is `MANAGED_ROOTS` computed at startup with `.resolve()` so that symlinks and relative paths are fully normalized before comparison?
+- Does `GET /files/corpus/binary_file.png` return 400, or does it attempt to decode the bytes as UTF-8 and produce garbled output?
