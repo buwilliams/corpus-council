@@ -11,7 +11,6 @@ from corpus_council.core.config import AppConfig
 from corpus_council.core.llm import LLMClient
 from corpus_council.core.store import FileStore
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -56,7 +55,9 @@ async def client(
 # ---------------------------------------------------------------------------
 
 
-async def test_list_roots(client: httpx.AsyncClient, managed_roots: dict[str, Path]) -> None:
+async def test_list_roots(
+    client: httpx.AsyncClient, managed_roots: dict[str, Path]
+) -> None:
     """GET /files returns 200 with all five root names."""
     response = await client.get("/files")
     assert response.status_code == 200
@@ -64,7 +65,9 @@ async def test_list_roots(client: httpx.AsyncClient, managed_roots: dict[str, Pa
     assert set(data["roots"]) == {"corpus", "council", "plans", "goals", "templates"}
 
 
-async def test_list_directory(client: httpx.AsyncClient, managed_roots: dict[str, Path]) -> None:
+async def test_list_directory(
+    client: httpx.AsyncClient, managed_roots: dict[str, Path]
+) -> None:
     """GET /files/corpus/ lists files in the corpus root."""
     (managed_roots["corpus"] / "doc.md").write_text("hello", encoding="utf-8")
     response = await client.get("/files/corpus/")
@@ -87,7 +90,9 @@ async def test_list_directory_entry_fields(
     assert file_entry["size"] == 3
 
 
-async def test_read_file(client: httpx.AsyncClient, managed_roots: dict[str, Path]) -> None:
+async def test_read_file(
+    client: httpx.AsyncClient, managed_roots: dict[str, Path]
+) -> None:
     """GET /files/corpus/doc.md returns file content."""
     (managed_roots["corpus"] / "doc.md").write_text("# Hello\n", encoding="utf-8")
     response = await client.get("/files/corpus/doc.md")
@@ -97,7 +102,9 @@ async def test_read_file(client: httpx.AsyncClient, managed_roots: dict[str, Pat
     assert data["content"] == "# Hello\n"
 
 
-async def test_read_nested_file(client: httpx.AsyncClient, managed_roots: dict[str, Path]) -> None:
+async def test_read_nested_file(
+    client: httpx.AsyncClient, managed_roots: dict[str, Path]
+) -> None:
     """GET /files/corpus/sub/nested.md reads a file in a subdirectory."""
     sub = managed_roots["corpus"] / "sub"
     sub.mkdir()
@@ -107,13 +114,17 @@ async def test_read_nested_file(client: httpx.AsyncClient, managed_roots: dict[s
     assert response.json()["content"] == "nested content"
 
 
-async def test_write_file(client: httpx.AsyncClient, managed_roots: dict[str, Path]) -> None:
+async def test_write_file(
+    client: httpx.AsyncClient, managed_roots: dict[str, Path]
+) -> None:
     """PUT /files/corpus/new.md creates a new file and returns 200."""
     response = await client.put(
         "/files/corpus/new.md", json={"content": "created content"}
     )
     assert response.status_code == 200
-    assert (managed_roots["corpus"] / "new.md").read_text(encoding="utf-8") == "created content"
+    assert (managed_roots["corpus"] / "new.md").read_text(
+        encoding="utf-8"
+    ) == "created content"
 
 
 async def test_write_file_creates_parent_dirs(
@@ -132,14 +143,16 @@ async def test_write_file_overwrites_existing(
 ) -> None:
     """PUT /files/corpus/doc.md overwrites an existing file."""
     (managed_roots["corpus"] / "doc.md").write_text("old", encoding="utf-8")
-    response = await client.put(
-        "/files/corpus/doc.md", json={"content": "new content"}
-    )
+    response = await client.put("/files/corpus/doc.md", json={"content": "new content"})
     assert response.status_code == 200
-    assert (managed_roots["corpus"] / "doc.md").read_text(encoding="utf-8") == "new content"
+    assert (managed_roots["corpus"] / "doc.md").read_text(
+        encoding="utf-8"
+    ) == "new content"
 
 
-async def test_delete_file(client: httpx.AsyncClient, managed_roots: dict[str, Path]) -> None:
+async def test_delete_file(
+    client: httpx.AsyncClient, managed_roots: dict[str, Path]
+) -> None:
     """DELETE /files/corpus/doc.md succeeds (2xx) and removes the file."""
     target = managed_roots["corpus"] / "doc.md"
     target.write_text("delete me", encoding="utf-8")

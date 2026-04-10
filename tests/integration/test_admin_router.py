@@ -12,7 +12,6 @@ from corpus_council.core.config import AppConfig
 from corpus_council.core.llm import LLMClient
 from corpus_council.core.store import FileStore
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -157,7 +156,9 @@ async def test_post_goals_process_200(
 ) -> None:
     """POST /admin/goals/process returns 200 with goals_processed count."""
     mock_results = [MagicMock(), MagicMock(), MagicMock()]
-    monkeypatch.setattr("corpus_council.core.goals.process_goals", lambda **kw: mock_results)
+    monkeypatch.setattr(
+        "corpus_council.core.goals.process_goals", lambda **kw: mock_results
+    )
 
     response = await client.post("/admin/goals/process")
 

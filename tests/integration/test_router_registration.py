@@ -30,7 +30,9 @@ async def test_conversation_router_registered(client: httpx.AsyncClient) -> None
     response = await client.get("/openapi.json")
     assert response.status_code == 200
     paths = response.json()["paths"]
-    assert "/conversation" in paths, f"Expected /conversation in paths, got: {list(paths.keys())}"
+    assert "/conversation" in paths, (
+        f"Expected /conversation in paths, got: {list(paths.keys())}"
+    )
     assert "post" in paths["/conversation"]
 
 
