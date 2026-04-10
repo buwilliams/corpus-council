@@ -119,3 +119,18 @@ class FileRootsResponse(BaseModel):
 class FileWriteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     content: str
+
+
+class ConfigResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+
+
+class ConfigWriteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str
+
+
+class GoalsProcessResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    goals_processed: int
