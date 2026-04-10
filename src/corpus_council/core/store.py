@@ -3,6 +3,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -102,6 +103,35 @@ class FileStore:
         return (
             self.user_dir(user_id) / "goals" / goal / conversation_id / "context.json"
         )
+
+    # ------------------------------------------------------------------
+    # Goal conversation helpers
+    # ------------------------------------------------------------------
+
+    def list_goal_conversations(self, user_id: str, goal: str) -> list[str]:
+        """Return conversation IDs for user+goal, sorted newest-first."""
+        base = self.user_dir(user_id) / "goals" / goal
+        if not base.exists():
+            return []
+        dirs = [d for d in base.iterdir() if d.is_dir()]
+        dirs.sort(key=lambda d: d.stat().st_mtime, reverse=True)
+        return [d.name for d in dirs]
+
+    def read_goal_messages(
+        self, user_id: str, goal: str, conversation_id: str
+    ) -> list[dict[str, Any]]:
+        """Read all turns from a conversation's messages.jsonl."""
+        return self.read_jsonl(self.goal_messages_path(user_id, goal, conversation_id))
+
+    def delete_goal_conversation(
+        self, user_id: str, goal: str, conversation_id: str
+    ) -> None:
+        """Delete a conversation directory."""
+        if ".." in conversation_id.split("/"):
+            raise ValueError("Invalid conversation_id")
+        conv_dir = self.user_dir(user_id) / "goals" / goal / conversation_id
+        if conv_dir.exists():
+            shutil.rmtree(conv_dir)
 
     # ------------------------------------------------------------------
     # Convenience path builders — collection

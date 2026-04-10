@@ -94,3 +94,32 @@ class GoalSummary(BaseModel):
 class GoalsListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     goals: list[GoalSummary]
+
+
+class MessageRecord(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    user: str
+    assistant: str
+    timestamp: str | None = None
+
+
+class ConversationSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    conversation_id: str
+
+
+class ConversationListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    conversations: list[ConversationSummary]
+
+
+class ConversationHistoryResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    conversation_id: str
+    goal: str
+    messages: list[MessageRecord]
+
+
+class DeleteConversationResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    status: str

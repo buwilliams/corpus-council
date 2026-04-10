@@ -127,6 +127,20 @@ async def put_file(root: str, path: str, body: FileWriteRequest) -> FileContentR
     return FileContentResponse(type="file", content=body.content)
 
 
+@router.post("/files/{root}/{path:path}")
+async def create_directory(root: str, path: str) -> dict[str, str]:
+    """POST /files/{root}/{path} — create a directory."""
+    resolved = _resolve_safe_path(root, path)
+
+    if resolved.exists() and not resolved.is_dir():
+        raise HTTPException(
+            status_code=400, detail=f"Path {path!r} already exists as a file"
+        )
+
+    resolved.mkdir(parents=True, exist_ok=True)
+    return {"created": path, "type": "directory"}
+
+
 @router.delete("/files/{root}/{path:path}")
 async def delete_file(root: str, path: str) -> dict[str, str]:
     """DELETE /files/{root}/{path} — delete a file."""

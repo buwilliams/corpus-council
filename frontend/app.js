@@ -6,10 +6,14 @@ let loadedFileContent = '';
 let filesTabLoaded = false;
 let adminTabLoaded = false;
 let currentDirPath = '';
+let currentConversationId = null;
 
 // ─── Tab switching ────────────────────────────────────────────────────────────
 
 function initTabs() {
+  const hamburger = document.getElementById('hamburger');
+  const menu = document.getElementById('hamburger-menu');
+  const backdrop = document.getElementById('menu-backdrop');
   const tabs = document.querySelectorAll('[data-tab]');
   const sections = document.querySelectorAll('section[id^="tab-"]');
 
@@ -18,27 +22,49 @@ function initTabs() {
     sec.style.display = i === 0 ? '' : 'none';
   });
 
+  function setTitle(tabName) {
+    const label = tabName.charAt(0).toUpperCase() + tabName.slice(1);
+    document.getElementById('app-title').textContent = label + ' \u2014 Corpus Council';
+  }
+
+  function openMenu() {
+    menu.classList.add('open');
+    backdrop.classList.add('open');
+    hamburger.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeMenu() {
+    menu.classList.remove('open');
+    backdrop.classList.remove('open');
+    hamburger.setAttribute('aria-expanded', 'false');
+  }
+
+  hamburger.addEventListener('click', () => {
+    menu.classList.contains('open') ? closeMenu() : openMenu();
+  });
+
+  backdrop.addEventListener('click', closeMenu);
+
   tabs.forEach(btn => {
     btn.addEventListener('click', () => {
       const target = btn.getAttribute('data-tab');
 
-      // Hide all sections, deactivate all tabs
+      closeMenu();
+
       sections.forEach(sec => { sec.style.display = 'none'; });
       tabs.forEach(t => { t.removeAttribute('aria-current'); });
 
-      // Show target section, mark tab active
       const section = document.getElementById('tab-' + target);
       if (section) section.style.display = '';
       btn.setAttribute('aria-current', 'page');
+      setTitle(target);
 
-      // Lazy loads
       if (target === 'files' && !filesTabLoaded) {
         filesTabLoaded = true;
         loadFileRoots();
       }
       if (target === 'admin' && !adminTabLoaded) {
         adminTabLoaded = true;
-        loadConfig();
       }
     });
   });
@@ -67,69 +93,227 @@ async function loadGoals() {
   } catch (_err) {
     sel.innerHTML = '<option disabled>No goals available</option>';
   }
+  refreshConversationList();
 }
 
 // ─── Goals tab ────────────────────────────────────────────────────────────────
 
 function initGoalsTab() {
-  document.getElementById('goals-submit').addEventListener('click', async () => {
-    const btn = document.getElementById('goals-submit');
-    const history = document.getElementById('goals-history');
-    const input = document.getElementById('goals-input');
-    const message = input.value.trim();
-    if (!message) return;
+  document.getElementById('goal-select').addEventListener('change', refreshConversationList);
+  document.getElementById('goals-user-id').addEventListener('change', refreshConversationList);
+  document.getElementById('goals-new-conv').addEventListener('click', toggleNewConvForm);
+  document.getElementById('goals-submit').addEventListener('click', sendGoalMessage);
+}
 
-    const goal = document.getElementById('goal-select').value;
-    const userId = document.getElementById('goals-user-id').value.trim();
-    const convIdInput = document.getElementById('goals-conversation-id');
-    const conversationId = convIdInput.value.trim() || null;
-    const modeVal = document.getElementById('goals-mode').value;
+function toggleNewConvForm() {
+  const form = document.getElementById('new-conv-form');
+  const open = form.style.display !== 'none';
+  form.style.display = open ? 'none' : '';
+  if (!open) {
+    // Opened form — deselect active conversation
+    currentConversationId = null;
+    document.getElementById('goals-history').innerHTML = '';
+    document.getElementById('goals-meta').innerHTML = '';
+    document.querySelectorAll('.conv-item').forEach(item => item.classList.remove('active'));
+  }
+}
 
-    // Append user message to history
-    const userDiv = document.createElement('div');
-    userDiv.className = 'user-turn';
-    userDiv.textContent = message;
-    history.appendChild(userDiv);
-    input.value = '';
-    history.scrollTop = history.scrollHeight;
+function updateMeta(goal, userId, mode, conversationId) {
+  const meta = document.getElementById('goals-meta');
+  meta.innerHTML = '';
+  [
+    ['Goal', goal],
+    ['User', userId],
+    ['Mode', mode || 'default'],
+    ['Conv', conversationId ? conversationId.slice(0, 8) + '\u2026' : '\u2014'],
+  ].forEach(([label, value]) => {
+    const span = document.createElement('span');
+    const b = document.createElement('b');
+    b.textContent = label + ':';
+    span.appendChild(b);
+    span.appendChild(document.createTextNode(' ' + value));
+    meta.appendChild(span);
+  });
+}
 
-    btn.disabled = true;
-    btn.setAttribute('aria-busy', 'true');
-    try {
-      const body = { goal, user_id: userId, message };
-      if (conversationId) body.conversation_id = conversationId;
-      if (modeVal) body.mode = modeVal;
+async function refreshConversationList() {
+  const goal = document.getElementById('goal-select').value;
+  const userId = document.getElementById('goals-user-id').value.trim();
+  const list = document.getElementById('goals-conv-list');
 
-      const res = await fetch('/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
+  if (!goal || !userId || userId.length < 4) {
+    list.innerHTML = '<div class="conv-item-empty">Set goal and user ID</div>';
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      `/conversations?user_id=${encodeURIComponent(userId)}&goal=${encodeURIComponent(goal)}`
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    list.innerHTML = '';
+    if (data.conversations.length === 0) {
+      list.innerHTML = '<div class="conv-item-empty">No conversations yet</div>';
+      return;
+    }
+
+    data.conversations.forEach(conv => {
+      const item = document.createElement('div');
+      item.className = 'conv-item' + (conv.conversation_id === currentConversationId ? ' active' : '');
+      item.dataset.convId = conv.conversation_id;
+
+      const label = document.createElement('span');
+      label.className = 'conv-item-label';
+      label.textContent = conv.conversation_id.slice(0, 8) + '\u2026';
+      label.title = conv.conversation_id;
+      label.addEventListener('click', () => loadConversation(conv.conversation_id));
+
+      const del = document.createElement('button');
+      del.className = 'conv-delete';
+      del.textContent = '\u00d7';
+      del.title = 'Delete';
+      del.addEventListener('click', e => { e.stopPropagation(); deleteConversation(conv.conversation_id); });
+
+      item.appendChild(label);
+      item.appendChild(del);
+      list.appendChild(item);
+    });
+  } catch (err) {
+    list.innerHTML = `<div class="conv-item-empty">Error: ${err.message}</div>`;
+  }
+}
+
+async function loadConversation(conversationId) {
+  const goal = document.getElementById('goal-select').value;
+  const userId = document.getElementById('goals-user-id').value.trim();
+  const mode = document.getElementById('goals-mode').value;
+
+  currentConversationId = conversationId;
+  document.getElementById('new-conv-form').style.display = 'none';
+  updateMeta(goal, userId, mode, conversationId);
+
+  document.querySelectorAll('.conv-item').forEach(item => {
+    item.classList.toggle('active', item.dataset.convId === conversationId);
+  });
+
+  const history = document.getElementById('goals-history');
+  history.innerHTML = '<div class="conv-item-empty">Loading\u2026</div>';
+
+  try {
+    const res = await fetch(
+      `/conversations/${encodeURIComponent(conversationId)}?user_id=${encodeURIComponent(userId)}&goal=${encodeURIComponent(goal)}`
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+
+    history.innerHTML = '';
+    data.messages.forEach(msg => {
+      const userDiv = document.createElement('div');
+      userDiv.className = 'user-turn';
+      userDiv.textContent = msg.user;
+      history.appendChild(userDiv);
 
       const assistantDiv = document.createElement('div');
       assistantDiv.className = 'assistant-turn';
-      if (!res.ok) {
-        assistantDiv.textContent = `Error: ${data.error || data.detail || res.status}`;
-      } else {
-        assistantDiv.textContent = data.response;
-        // Auto-populate conversation_id on first response
-        if (!convIdInput.value.trim()) {
-          convIdInput.value = data.conversation_id;
-        }
-      }
+      assistantDiv.innerHTML = marked.parse(msg.assistant);
       history.appendChild(assistantDiv);
-      history.scrollTop = history.scrollHeight;
-    } catch (err) {
-      const errDiv = document.createElement('div');
-      errDiv.className = 'assistant-turn';
-      errDiv.textContent = `Network error: ${err.message}`;
-      history.appendChild(errDiv);
-    } finally {
-      btn.disabled = false;
-      btn.removeAttribute('aria-busy');
+    });
+    history.scrollTop = history.scrollHeight;
+  } catch (err) {
+    history.innerHTML = `<div class="conv-item-empty">Error: ${err.message}</div>`;
+  }
+}
+
+async function deleteConversation(conversationId) {
+  const goal = document.getElementById('goal-select').value;
+  const userId = document.getElementById('goals-user-id').value.trim();
+  if (!goal || !userId) return;
+  if (!confirm('Delete this conversation?')) return;
+
+  try {
+    const res = await fetch(
+      `/conversations/${encodeURIComponent(conversationId)}?user_id=${encodeURIComponent(userId)}&goal=${encodeURIComponent(goal)}`,
+      { method: 'DELETE' }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (conversationId === currentConversationId) {
+      currentConversationId = null;
+      document.getElementById('goals-history').innerHTML = '';
+      document.getElementById('goals-meta').innerHTML = '';
     }
-  });
+    refreshConversationList();
+  } catch (err) {
+    alert(`Delete failed: ${err.message}`);
+  }
+}
+
+async function sendGoalMessage() {
+  const btn = document.getElementById('goals-submit');
+  const history = document.getElementById('goals-history');
+  const input = document.getElementById('goals-input');
+  const message = input.value.trim();
+  if (!message) return;
+
+  const goal = document.getElementById('goal-select').value;
+  const userId = document.getElementById('goals-user-id').value.trim();
+  const modeVal = document.getElementById('goals-mode').value;
+
+  const userDiv = document.createElement('div');
+  userDiv.className = 'user-turn';
+  userDiv.textContent = message;
+  history.appendChild(userDiv);
+  input.value = '';
+  history.scrollTop = history.scrollHeight;
+
+  const loadingDiv = document.createElement('div');
+  loadingDiv.className = 'assistant-turn loading-turn';
+  loadingDiv.textContent = 'Loading…';
+  history.appendChild(loadingDiv);
+  history.scrollTop = history.scrollHeight;
+
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+
+  try {
+    const body = { goal, user_id: userId, message };
+    if (currentConversationId) body.conversation_id = currentConversationId;
+    if (modeVal) body.mode = modeVal;
+
+    const res = await fetch('/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+
+    loadingDiv.remove();
+    const assistantDiv = document.createElement('div');
+    assistantDiv.className = 'assistant-turn';
+    if (!res.ok) {
+      assistantDiv.textContent = `Error: ${data.error || data.detail || res.status}`;
+    } else {
+      assistantDiv.innerHTML = marked.parse(data.response);
+      if (!currentConversationId) {
+        currentConversationId = data.conversation_id;
+        updateMeta(goal, userId, modeVal, data.conversation_id);
+        document.getElementById('new-conv-form').style.display = 'none';
+        refreshConversationList();
+      }
+    }
+    history.appendChild(assistantDiv);
+    history.scrollTop = history.scrollHeight;
+  } catch (err) {
+    loadingDiv.remove();
+    const errDiv = document.createElement('div');
+    errDiv.className = 'assistant-turn';
+    errDiv.textContent = `Network error: ${err.message}`;
+    history.appendChild(errDiv);
+  } finally {
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+  }
 }
 
 // ─── Files tab ────────────────────────────────────────────────────────────────
@@ -340,7 +524,7 @@ function initFilesTab() {
   document.getElementById('new-file-create').addEventListener('click', async () => {
     const nameInput = document.getElementById('new-file-name');
     const name = nameInput.value.trim();
-    if (!name) { alert('Enter a filename.'); return; }
+    if (!name) { alert('Enter a name.'); return; }
 
     const parentPath = currentDirPath || '';
     const fullPath = parentPath ? parentPath + '/' + name : name;
@@ -349,7 +533,7 @@ function initFilesTab() {
     btn.disabled = true;
     try {
       const res = await fetch('/files/' + encodePathSegments(fullPath), {
-        method: 'POST',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content: '' }),
       });
@@ -358,7 +542,40 @@ function initFilesTab() {
         alert(`Create failed: ${data.error || data.detail || res.status}`);
       } else {
         nameInput.value = '';
-        document.getElementById('new-file-form').removeAttribute('open');
+        if (parentPath) {
+          loadDir(parentPath);
+        } else {
+          loadFileRoots();
+        }
+      }
+    } catch (err) {
+      alert(`Network error: ${err.message}`);
+    } finally {
+      btn.removeAttribute('aria-busy');
+      btn.disabled = false;
+    }
+  });
+
+  // New folder
+  document.getElementById('new-folder-create').addEventListener('click', async () => {
+    const nameInput = document.getElementById('new-file-name');
+    const name = nameInput.value.trim();
+    if (!name) { alert('Enter a name.'); return; }
+
+    const parentPath = currentDirPath || '';
+    const fullPath = parentPath ? parentPath + '/' + name : name;
+    const btn = document.getElementById('new-folder-create');
+    btn.setAttribute('aria-busy', 'true');
+    btn.disabled = true;
+    try {
+      const res = await fetch('/files/' + encodePathSegments(fullPath), {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        alert(`Create failed: ${data.error || data.detail || res.status}`);
+      } else {
+        nameInput.value = '';
         if (parentPath) {
           loadDir(parentPath);
         } else {
@@ -376,17 +593,6 @@ function initFilesTab() {
 
 // ─── Admin tab ────────────────────────────────────────────────────────────────
 
-async function loadConfig() {
-  const editor = document.getElementById('config-editor');
-  try {
-    const res = await fetch('/config');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    editor.value = data.content !== undefined ? data.content : JSON.stringify(data, null, 2);
-  } catch (err) {
-    editor.value = `# Error loading config: ${err.message}`;
-  }
-}
 
 async function adminAction(url, body, successFn) {
   const output = document.getElementById('admin-output');
@@ -411,47 +617,6 @@ async function adminAction(url, body, successFn) {
 }
 
 function initAdminTab() {
-  // Save config
-  document.getElementById('config-save').addEventListener('click', async () => {
-    const btn = document.getElementById('config-save');
-    btn.setAttribute('aria-busy', 'true');
-    btn.disabled = true;
-    const output = document.getElementById('admin-output');
-    try {
-      const content = document.getElementById('config-editor').value;
-      const res = await fetch('/config', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        output.textContent = `Save failed: ${data.error || data.detail || res.status}`;
-      } else {
-        output.textContent = 'Saved.';
-      }
-    } catch (err) {
-      output.textContent = `Network error: ${err.message}`;
-    } finally {
-      btn.removeAttribute('aria-busy');
-      btn.disabled = false;
-    }
-  });
-
-  // Reload config
-  document.getElementById('config-reload').addEventListener('click', async () => {
-    const btn = document.getElementById('config-reload');
-    btn.setAttribute('aria-busy', 'true');
-    btn.disabled = true;
-    try {
-      await loadConfig();
-      document.getElementById('admin-output').textContent = 'Config reloaded.';
-    } finally {
-      btn.removeAttribute('aria-busy');
-      btn.disabled = false;
-    }
-  });
-
   // Ingest corpus
   document.getElementById('btn-ingest').addEventListener('click', async () => {
     const btn = document.getElementById('btn-ingest');
