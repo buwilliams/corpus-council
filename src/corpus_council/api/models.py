@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -10,57 +10,20 @@ class ErrorResponse(BaseModel):
     error: str
 
 
-class ConversationRequest(BaseModel):
+class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    goal: str
     user_id: str
+    conversation_id: str | None = None
     message: str
-    mode: Literal["sequential", "consolidated"] | None = None
+    mode: str | None = None
 
 
-class ConversationResponse(BaseModel):
+class ChatResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     response: str
-    user_id: str
-
-
-class CollectionStartRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    user_id: str
-    plan_id: str
-    mode: Literal["sequential", "consolidated"] | None = None
-
-
-class CollectionStartResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    user_id: str
-    session_id: str
-    first_prompt: str
-
-
-class CollectionRespondRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    user_id: str
-    session_id: str
-    message: str
-    mode: Literal["sequential", "consolidated"] | None = None
-
-
-class CollectionRespondResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    user_id: str
-    session_id: str
-    prompt: str | None
-    status: Literal["active", "complete"]
-    collected: dict[str, Any]
-
-
-class CollectionStatusResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    user_id: str
-    session_id: str
-    status: str
-    collected: dict[str, Any]
-    created_at: str
+    goal: str
+    conversation_id: str
 
 
 class CorpusIngestRequest(BaseModel):
@@ -77,19 +40,6 @@ class CorpusIngestResponse(BaseModel):
 class CorpusEmbedResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     vectors_created: int
-
-
-class QueryRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    message: str
-    goal: str
-    mode: Literal["sequential", "consolidated"] | None = None
-
-
-class QueryResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    response: str
-    goal: str
 
 
 class FileEntry(BaseModel):
