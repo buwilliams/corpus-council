@@ -40,9 +40,8 @@ def _resolve_safe_path(root_name: str, rel_path: str) -> Path:
         HTTPException 400: on path traversal or invalid root.
         HTTPException 404: root directory itself does not exist.
     """
-    # Layer 1: reject .. segments
-    parts = Path(rel_path).parts
-    if ".." in parts:
+    # Reject '..' segments before any Path resolution to prevent traversal attacks.
+    if ".." in rel_path.split("/"):
         raise HTTPException(
             status_code=400,
             detail="Path traversal with '..' is not allowed",
