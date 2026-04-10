@@ -7,7 +7,9 @@ from fastapi import APIRouter, HTTPException
 from corpus_council.api.models import (
     ConfigResponse,
     ConfigWriteRequest,
+    GoalsListResponse,
     GoalsProcessResponse,
+    GoalSummary,
 )
 
 router = APIRouter()
@@ -35,6 +37,27 @@ async def put_config(request: ConfigWriteRequest) -> ConfigResponse:
             status_code=500, detail=f"Failed to write config.yaml: {exc}"
         ) from exc
     return ConfigResponse(content=request.content)
+
+
+@router.get("/goals", response_model=GoalsListResponse)
+async def list_goals() -> GoalsListResponse:
+    """GET /goals — return the list of available goals from the manifest."""
+    import json
+
+    from corpus_council.api.app import config
+
+    manifest_path = config.goals_manifest_path
+    if not manifest_path.exists():
+        return GoalsListResponse(goals=[])
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(
+            status_code=500, detail="Could not read goals manifest"
+        ) from exc
+    return GoalsListResponse(
+        goals=[GoalSummary(name=g["name"]) for g in data if "name" in g]
+    )
 
 
 @router.post("/admin/goals/process", response_model=GoalsProcessResponse)

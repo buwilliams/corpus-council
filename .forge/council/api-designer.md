@@ -4,124 +4,118 @@
 
 ### Role
 
-Owns the FastAPI endpoint contracts, Pydantic request/response models, HTTP status code conventions, and URL design for all new endpoints: the files router (`/files`), the admin router (`/config`, `/admin/goals/process`), and the conversation/collection router registrations.
+Owns the `POST /chat` endpoint contract, the `ChatRequest`/`ChatResponse` Pydantic models, HTTP status code conventions, and the CLI `chat` interface design — ensuring the REST and CLI surfaces are coherent, consistent, and cleanly replace all old query/conversation/collection surfaces.
 
 ### Guiding Principles
 
-- Every new endpoint must have an explicit Pydantic request body model and an explicit Pydantic response model. No `dict` or `Any` as a response type.
-- HTTP status codes must be semantically correct: 200 for success, 201 for resource creation, 204 for deletion with no body, 400 for client input errors (including path traversal), 404 when a resource is not found, 409 for creation conflicts, 422 for Pydantic validation errors, 500 for unexpected server errors.
-- Field names across all endpoints must follow a single consistent convention: `snake_case`. No mixing of `camelCase` and `snake_case`.
-- Error responses must always include a human-readable `"error"` field. Never return an empty 500 or a raw exception message to the caller.
-- The file management API uses `{path:path}` as a FastAPI path parameter to capture slashes. The path is an opaque string validated at the router level — not by Pydantic.
-- Breaking changes to existing endpoints (`POST /query`, `POST /corpus/ingest`, `POST /corpus/embed`) are not permitted.
+- `POST /chat` is the single conversational endpoint. No other endpoint accepts a user message and returns an LLM response.
+- Every endpoint must have an explicit Pydantic request model and an explicit Pydantic response model. No `dict` or `Any` as a response type.
+- HTTP status codes must be semantically correct: 200 for success, 400 for invalid `conversation_id` (path traversal), 404 for unknown goal, 422 for Pydantic validation failures (including invalid `user_id`), 500 for unexpected server errors.
+- Field names follow `snake_case` throughout. No mixing conventions.
+- Error responses always include a human-readable `"detail"` or `"error"` field. Never return an empty 500 or raw exception message.
+- `conversation_id` is always a UUID string when auto-generated. Caller-supplied `conversation_id` is validated before use.
 - All new Pydantic models use `model_config = ConfigDict(extra="forbid")` to reject unexpected fields.
+- Breaking changes to remaining endpoints (e.g., `GET /goals`, `POST /corpus/ingest`, `POST /corpus/embed`) are not permitted.
 
 ### Implementation Approach
 
-1. **Define all new Pydantic models before writing endpoint functions.** Place models in `src/corpus_council/api/models.py` (shared) or inline in the router file if the model is used only by that router.
+1. **Define all Pydantic models before writing endpoint functions.** Place in `src/corpus_council/api/models.py`.
 
-   File router response models:
+   Request model:
    ```python
    from pydantic import BaseModel, ConfigDict
 
-   class FileEntry(BaseModel):
+   class ChatRequest(BaseModel):
        model_config = ConfigDict(extra="forbid")
-       name: str
-       type: Literal["file", "directory"]
-       size: int | None = None
-
-   class DirectoryResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       type: Literal["directory"]
-       entries: list[FileEntry]
-
-   class FileResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       type: Literal["file"]
-       content: str
-
-   class RootsResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       roots: list[str]
+       goal: str
+       user_id: str
+       conversation_id: str | None = None
+       message: str
+       mode: str | None = None
    ```
 
-   File write request model:
+   Response model:
    ```python
-   class FileWriteRequest(BaseModel):
+   class ChatResponse(BaseModel):
        model_config = ConfigDict(extra="forbid")
-       content: str
+       response: str
+       goal: str
+       conversation_id: str
    ```
 
-   Admin models:
-   ```python
-   class ConfigResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       content: str
+   Remove from `models.py`: `ConversationRequest`, `ConversationResponse`, `CollectionStartRequest`, `CollectionStartResponse`, `CollectionRespondRequest`, `CollectionRespondResponse`, `CollectionStatusResponse`, `QueryRequest`, `QueryResponse`.
 
-   class ConfigWriteRequest(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       content: str
+2. **Define the complete `POST /chat` contract:**
 
-   class ConfigWriteResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       ok: bool
+   | Field | Type | Required | Notes |
+   |-------|------|----------|-------|
+   | `goal` | string | yes | Must match a key in `goals_manifest.json`; 404 if not found |
+   | `user_id` | string | yes | Validated via `validate_id`; 422 if invalid |
+   | `conversation_id` | string | no | UUID; auto-generated if absent; 400 if contains `..` |
+   | `message` | string | yes | The user's message text |
+   | `mode` | string | no | `"sequential"` or `"consolidated"`; passed to deliberation |
 
-   class GoalsProcessResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       processed: int
-   ```
-
-2. **Define the complete files router contract:**
-
-   | Method | Path | Success | Body In | Body Out |
-   |--------|------|---------|---------|---------|
-   | GET | `/files` | 200 | — | `RootsResponse` |
-   | GET | `/files/{path}` | 200 | — | `DirectoryResponse` or `FileResponse` |
-   | POST | `/files/{path}` | 201 | `FileWriteRequest` | `{"created": true}` |
-   | PUT | `/files/{path}` | 200 | `FileWriteRequest` | `{"ok": true}` |
-   | DELETE | `/files/{path}` | 204 | — | — (no body) |
+   Response:
+   | Field | Type | Notes |
+   |-------|------|-------|
+   | `response` | string | The assistant's response text |
+   | `goal` | string | Echo of the request `goal` |
+   | `conversation_id` | string | The UUID for this conversation thread |
 
    Error cases:
-   - `..` in path parameter → 400 `{"error": "Path traversal is not allowed"}`
-   - Unknown root directory → 400 `{"error": "Unknown managed directory: '<name>'"}`
-   - Path resolves outside root → 400 `{"error": "Path escapes managed directory"}`
-   - File/directory not found → 404 `{"error": "Resource not found"}`
-   - POST on existing file → 409 `{"error": "File already exists"}`
-   - PUT/DELETE on directory → 400 `{"error": "Path is a directory"}`
+   - Unknown `goal` → 404 `{"detail": "Goal not found: '<name>'"}`
+   - `user_id` fails `validate_id` → 422 (Pydantic/FastAPI validation error)
+   - `conversation_id` contains `..` → 400 `{"detail": "Invalid conversation_id"}`
+   - Unexpected error → 500 `{"detail": "Internal server error"}`
 
-3. **Define the complete admin router contract:**
+3. **Define the CLI `chat` interface contract:**
 
-   | Method | Path | Success | Body In | Body Out |
-   |--------|------|---------|---------|---------|
-   | GET | `/config` | 200 | — | `ConfigResponse` |
-   | PUT | `/config` | 200 | `ConfigWriteRequest` | `ConfigWriteResponse` |
-   | POST | `/admin/goals/process` | 200 | — | `GoalsProcessResponse` |
+   ```
+   chat <user_id> --goal <goal_name> [--session <conversation_id>] [--mode sequential|consolidated]
+   ```
 
-4. **Use `{path:path}` for the file path parameter.** This is the FastAPI convention for path parameters that contain slashes. The resulting `path` string is validated before any `Path` object is constructed.
+   - `user_id`: positional, required
+   - `--goal`: option, required; missing goal prints "Error: --goal is required" and exits 1
+   - `--session`: option, optional; resumes an existing conversation thread
+   - `--mode`: option, optional; default behavior if absent
 
-5. **Ensure all error responses use the existing exception handler pattern from `app.py`.** The `value_error_handler` already converts `ValueError` to 422 — for the files router, map `ValueError` from path validation to 400 by raising `HTTPException(status_code=400, detail=...)` in the router, or override the handler for the files router specifically.
+   Interactive loop behavior:
+   - Prompt: `> ` (or similar)
+   - Each turn prints the assistant response
+   - After the first turn, the generated `conversation_id` is printed once (so the user can resume with `--session`)
+   - Ctrl-C / EOF exits cleanly with no error traceback
 
-   Because the existing `value_error_handler` maps `ValueError` → 422, the files router must raise `HTTPException(status_code=400, ...)` explicitly (not `ValueError`) for path traversal and unknown root cases.
+4. **Confirm no new endpoints are added for query, conversation, or collection.** The new chat router registers exactly one route: `POST /chat`.
 
-6. **Do not change the URL structure of existing endpoints.** `POST /query`, `POST /corpus/ingest`, `POST /corpus/embed` must continue to work with their existing request/response shapes.
+5. **Confirm `GET /goals` contract is unchanged.** This endpoint (existing) lists available goals. The frontend Goals tab depends on it for the goal selector dropdown. Do not modify its response shape.
 
-7. **Confirm the CLI interface is not affected.** The new routers add API surface only; no CLI commands are added or changed by this spec.
+6. **Validate that `mode` values are constrained.** If the router validates `mode`, it should only accept `"sequential"`, `"consolidated"`, or `None`. Reject other values with 422.
 
 ### Verification
 
 ```
-ruff check src/
-ruff format --check src/
-pyright src/
-pytest -m "not llm" tests/integration/test_files_api.py tests/integration/test_admin_api.py
+uv run ruff check .
+uv run ruff format --check .
+uv run pyright src/
+uv run pytest tests/integration/test_chat_api.py
 ```
 
-Also confirm the endpoint contracts manually:
+Also confirm the endpoint contract manually:
 ```bash
-curl -s http://127.0.0.1:8765/files | python3 -m json.tool
-curl -s -X GET http://127.0.0.1:8765/config | python3 -m json.tool
-curl -s -w "%{http_code}" http://127.0.0.1:8765/files/corpus/../../etc/passwd
-# Must print 400
+# Happy path — should return {response, goal, conversation_id}
+curl -s -X POST http://127.0.0.1:8765/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"default","user_id":"testuser","message":"hello"}' | python3 -m json.tool
+
+# Unknown goal — must return 404
+curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8765/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"nonexistent","user_id":"testuser","message":"hello"}'
+
+# Invalid conversation_id — must return 400
+curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8765/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"default","user_id":"testuser","conversation_id":"../evil","message":"hello"}'
 ```
 
 ### Save
@@ -140,22 +134,22 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The api-designer cares about interface consistency, client predictability, and whether callers — including the frontend `app.js` — can use the API correctly without reading the source code.
+The api-designer cares about interface consistency, client predictability, and whether the frontend and CLI can use `POST /chat` correctly without reading the source code.
 
 ### What I flag
 
-- `DELETE /files/{path}` returning 200 with a body instead of 204 with no body — HTTP semantics matter; the frontend must handle both correctly
-- Path parameter typed as `str` in the function signature but as `{path}` in the decorator — this captures only one path segment; `{path:path}` is required to capture slashes
-- Error responses that return raw `ValueError` messages (which may contain internal paths) instead of safe `HTTPException` detail strings
-- Inconsistent field names between the files and admin router responses — if files use `content` and admin uses `body`, callers must know which is which
-- `POST /files/{path}` returning 200 instead of 201 — creation must be distinguished from update; the frontend uses this to confirm a new resource was created
-- The existing `value_error_handler` (which maps `ValueError` → 422) being silently applied to path traversal cases — path traversal is a 400, not a 422
-- Any new endpoint that returns a raw Python exception message in the response body — even for 500 errors, the body must be `{"error": "Internal server error"}`
+- `POST /chat` returning `conversation_id` only when it was auto-generated — the frontend must always receive `conversation_id` in the response to enable continuation
+- `goal` missing from the response body — the frontend needs to confirm which goal was used; omitting it forces the client to track state redundantly
+- `mode` accepting arbitrary strings instead of being constrained to `"sequential" | "consolidated" | null` — an unconstrained mode silently falls back to a default, making misconfiguration invisible
+- The CLI `chat` command accepting `--goal` as optional with no enforcement — a Typer `Option` without `required=True` will not exit 1 on a missing value unless explicitly handled
+- Old models (`ConversationRequest`, `QueryRequest`, etc.) left in `models.py` — if they import from deleted router files, the entire API fails to start
+- `POST /chat` returning 200 with `{"error": "..."}` in the body instead of a proper HTTP error status — clients must be able to detect errors from the status code alone
+- Inconsistent field naming between `ChatRequest` (snake_case) and internal function parameters — callers must not need to map field names
 
 ### Questions I ask
 
-- Does `GET /files/corpus/../../etc/passwd` return 400, and does the response body contain `{"error": ...}` (not a stack trace)?
-- Does `POST /files/corpus/new.md` return 201, and does a subsequent `POST /files/corpus/new.md` return 409?
-- Does `DELETE /files/corpus/doc.md` return 204 with no response body?
-- Are all response models consistent with what `frontend/app.js` expects to parse?
-- Does `GET /files/corpus/subdir/` (a directory path) return a `DirectoryResponse`, and does `GET /files/corpus/doc.md` (a file path) return a `FileResponse`?
+- Does `POST /chat` always return `conversation_id` in the response, even when the caller supplied one?
+- Does the CLI `chat` command with no `--goal` argument print a useful error message and exit with code 1?
+- Does `POST /chat` with `mode="invalid_value"` return 422, not silently run with an unknown mode?
+- Are all old Pydantic models removed from `models.py` before any task is marked complete?
+- Does `GET /goals` still return the same response shape as before, with no changes from the Goals Unification refactor?

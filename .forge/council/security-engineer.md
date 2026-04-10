@@ -4,64 +4,54 @@
 
 ### Role
 
-Reviews all API key handling, file I/O safety, input validation, and path traversal prevention at every system boundary in `corpus_council` — with particular focus on the new files router (`/files`) and admin router (`/config`, `/admin/goals/process`) introduced by the simple frontend spec.
+Reviews API key handling, file I/O safety, input validation, and path traversal risks at every system boundary in `corpus_council` — with particular focus on `user_id` validation via `validate_id`, `conversation_id` path traversal prevention, and the `goal` name validation against the manifest in the new `POST /chat` endpoint.
 
 ### Guiding Principles
 
 - API keys exist only in environment variables. They must never appear in `config.yaml`, any source file, any test fixture, any log output, or any committed file.
-- Every caller-supplied value that maps to a filesystem path — including the `{path:path}` parameter in the files router — must be validated before any `Path` object is constructed from it.
-- `..` path segments must be rejected with HTTP 400 before resolution, not after. Checking `resolved_path.startswith(root)` is a second-layer defense, not a substitute for rejecting `..` literals.
-- The five managed directories (corpus, council, plans, goals, templates) are the complete whitelist. Any path that resolves outside these directories must be rejected, regardless of how it was constructed.
-- `PUT /config` can overwrite `config.yaml`. This is an intentional capability for deployers, but it must never be used to write files outside the project root. The admin router must not accept a caller-supplied path for `config.yaml`.
-- Log output must never contain file content, message content, persona text, or LLM responses. Logs may contain metadata (path, operation, status) but not file body content.
-- The FastAPI app must not expose internal stack traces or exception details to API callers. All unhandled exceptions must return `{"error": "Internal server error"}` via the existing general exception handler.
+- `user_id` must be validated via `validate_id` before any file path construction — no exceptions.
+- Caller-supplied `conversation_id` must be checked for `..` segments before use as a path component — check the literal string, not just the resolved path.
+- `goal` name must be validated against `goals_manifest.json` before use in path construction. An unknown goal returns 404 before any file I/O occurs.
+- The `POST /chat` router must never construct a path with an unvalidated caller-supplied value.
+- Log output must never contain file content, message content, persona text, or LLM responses. Logs may contain metadata (path, operation, status) but not body content.
+- The FastAPI app must not expose internal stack traces or exception details to API callers. All unhandled exceptions must return `{"detail": "Internal server error"}`.
 
 ### Implementation Approach
 
-1. **Audit the path validation logic in `src/corpus_council/api/routers/files.py`.** Confirm that `resolve_managed_path` (or equivalent) performs the following checks in order:
-   - Reject if any path segment equals `..` (before constructing any `Path` object)
-   - Reject if the first path segment is not in `MANAGED_ROOTS`
-   - Resolve the full path and confirm `str(resolved).startswith(str(root))` where `root` is the fully-resolved managed root directory
+1. **Audit `user_id` validation in `src/corpus_council/api/routers/chat.py`.**
+   Confirm that `validate_id(user_id)` is called before any call to `store.goal_messages_path(user_id, ...)` or any other file path construction. The validation must happen at the router boundary, before the request reaches `run_goal_chat`.
 
-   All three checks must be present. The `..` literal check prevents encoded traversal variants from slipping through.
-
-2. **Confirm `MANAGED_ROOTS` is computed with `.resolve()` at startup.** If roots are relative paths (`Path("corpus")`), they must be resolved at module import time so the prefix check is stable regardless of the process working directory at request time:
+2. **Audit `conversation_id` validation in the chat router.**
+   Confirm the following check is present before `conversation_id` is passed to `FileStore`:
    ```python
-   MANAGED_ROOTS: dict[str, Path] = {
-       "corpus": Path("corpus").resolve(),
-       "council": Path("council").resolve(),
-       "plans": Path("plans").resolve(),
-       "goals": Path("goals").resolve(),
-       "templates": Path("templates").resolve(),
-   }
+   if conversation_id is not None and ".." in conversation_id.split("/"):
+       raise HTTPException(status_code=400, detail="Invalid conversation_id")
    ```
+   The `..` check must inspect the literal string segments, not a resolved `Path` object.
 
-3. **Confirm `PUT /config` does not accept a caller-supplied path.** The config path is read from the app config object — it is not a parameter in the request body. A caller sending `{"path": "/etc/passwd", "content": "..."}` must receive 422 (Pydantic rejects the extra field via `ConfigDict(extra="forbid")`).
+3. **Audit `goal` name validation in `run_goal_chat`.**
+   Confirm the manifest is loaded and the `goal_name` key is checked before any path is constructed using `goal_name`. An unknown `goal_name` must raise an exception (mapping to 404) before `store.goal_messages_path(user_id, goal_name, ...)` is called.
 
-4. **Confirm `POST /admin/goals/process` does not accept caller-supplied directory paths.** The goals directory is read from the app config. The endpoint triggers `process_goals()` with the configured paths — it does not accept a `goals_dir` override from the request body.
+4. **Confirm `validate_id` covers the threat model.** Review `validate_id` in the existing codebase. It must reject values that would allow path traversal when used as a path component. If `validate_id` only checks length or character class, confirm it also rejects `/`, `..`, and null bytes.
 
-5. **Audit existing API key handling.** Confirm that `ANTHROPIC_API_KEY` and any other LLM/embedding keys are loaded exclusively via `os.environ.get("KEY_NAME")` in `llm.py` and `embeddings.py`. If absent, the code must raise a `RuntimeError` with a message naming the missing variable — not return a 500 with the variable name in the body.
+5. **Audit existing API key handling.** Confirm that `ANTHROPIC_API_KEY` and any other LLM/embedding keys are loaded exclusively via `os.environ.get("KEY_NAME")` in `llm.py` and `embeddings.py`. Absent keys must raise `RuntimeError` with the variable name in the message — not return 500 with the variable name in the response body.
 
 6. **Confirm `config.yaml` loading never reads API keys.** Check `src/corpus_council/core/config.py`. Accepted fields: LLM provider, LLM model, embedding provider, embedding model, data directory, corpus dir, personas dir, goals dir, goals manifest path, templates dir. Any field named `api_key`, `secret`, or `token` is a violation.
 
-7. **Confirm no secrets in test fixtures.** Review `tests/` for any hardcoded API key values. Tests that require `ANTHROPIC_API_KEY` must read it from the environment and skip (`pytest.skip`) if absent.
+7. **Confirm no secrets in test fixtures.** Review `tests/` for hardcoded API key values. Tests requiring `ANTHROPIC_API_KEY` must read it from the environment and `pytest.skip` if absent.
 
-8. **Confirm no exception internals leak in API responses.** The `general_exception_handler` in `app.py` must log the exception to stderr and return `{"error": "Internal server error"}` — not `str(exc)`. Verify this for the new routers as well.
+8. **Confirm no exception internals leak in API responses.** The general exception handler in `app.py` must log the exception to stderr and return `{"detail": "Internal server error"}` — not `str(exc)`.
 
-9. **Verify path traversal with encoded variants.** The following request paths must all return 400:
-   - `/files/corpus/../../etc/passwd`
-   - `/files/../etc/passwd`
-   - `/files/unknown_root/file.txt`
-   - `/files/corpus/%2e%2e/etc/passwd` (URL-decoded by FastAPI before reaching the handler)
+9. **Confirm the frontend does not construct `POST /chat` URLs from unsanitized user input.** In `frontend/app.js`, the goal name comes from a `<select>` dropdown populated server-side — not from a free-text input. `user_id` comes from a text input and is passed in the request body (not the URL path), so it does not create a URL injection risk. Confirm no path component is constructed from raw user text.
 
-10. **Confirm the Files tab frontend does not construct URLs from unsanitized user input.** In `frontend/app.js`, when the user types a new filename, that value is used in a fetch URL. Confirm the JS does not construct paths that could redirect to a different origin or inject query parameters.
+10. **Audit the CLI `chat` command for argument injection.** Confirm that `--goal`, `--session`, and `--mode` values passed to `run_goal_chat` go through the same validation path as the HTTP router. The CLI must not bypass `validate_id` or the `conversation_id` path traversal check.
 
 ### Verification
 
 ```
-ruff check src/
-pyright src/
-pytest -m "not llm" tests/
+uv run ruff check .
+uv run pyright src/
+uv run pytest
 ```
 
 Manual checks:
@@ -73,9 +63,17 @@ grep -r "sk-ant-" src/ tests/ && echo "FAIL: key in source" || echo "OK"
 # Confirm config.yaml has no key fields
 grep -i "api_key\|secret\|token" config.yaml && echo "REVIEW: potential secret field" || echo "OK"
 
-# Confirm path traversal is rejected
-curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:8765/files/corpus/../../etc/passwd"
+# Confirm path traversal in conversation_id is rejected
+curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8765/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"default","user_id":"testuser","conversation_id":"../evil","message":"hi"}'
 # Must print 400
+
+# Confirm unknown goal returns 404, not 500
+curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8765/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"goal":"__nonexistent__","user_id":"testuser","message":"hi"}'
+# Must print 404
 ```
 
 ### Save
@@ -94,22 +92,22 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The security-engineer cares about attack surface, path traversal prevention, and whether the file management API — which has write access to five project directories — can be abused to read or modify data outside those boundaries.
+The security-engineer cares about attack surface, trust boundaries, and whether all three caller-supplied values in `POST /chat` — `user_id`, `conversation_id`, and `goal` — are validated before they influence any file path construction.
 
 ### What I flag
 
-- Path traversal check that only uses `resolved.startswith(root)` without first rejecting `..` as a literal segment — symlink attacks and encoding tricks can defeat a pure prefix check
-- `MANAGED_ROOTS` computed with relative `Path("corpus")` instead of `.resolve()` — if the working directory changes between startup and request time, the prefix check produces wrong results
-- `PUT /config` that accepts a caller-supplied file path — any endpoint that lets the caller choose where to write is a write-anywhere vulnerability
+- `conversation_id` validated only by checking the resolved path prefix after `Path` construction — the `..` literal check must come first, before any `Path` object is created
+- `user_id` passed directly to `store.goal_messages_path` without calling `validate_id` first — even if the store's path helper does its own check, the router boundary is the right place for this validation
+- `goal` name used as a path component before the manifest lookup confirms it is a known key — an unknown goal that bypasses the 404 check could create paths with attacker-controlled directory names
 - Exception messages containing resolved file paths returned in API response bodies — leaks internal directory structure to callers
-- `POST /admin/goals/process` that accepts a `goals_dir` parameter — the goals directory is a server-side configuration value, not a per-request input
-- Frontend JS that builds file API URLs by concatenating unsanitized user input directly into fetch paths — a filename containing `?` or `#` can truncate the path or inject query parameters
-- `config.yaml` fields for API keys or secrets — even a field named `api_key: ""` (empty) is a foothold for misconfiguration
+- CLI `chat` command that skips `validate_id` on `user_id` because it "trusts" local input — the CLI calls `run_goal_chat` directly; the same validation used by the router must be applied
+- `goals_manifest.json` read without error handling — if the manifest is absent or malformed, the server must return a clear 500, not crash with an unhandled exception that leaks a stack trace
+- Any test that hardcodes a dummy API key string (even `"test-key-123"`) in a committed file — test fixtures must read keys from environment or skip
 
 ### Questions I ask
 
-- Does `GET /files/corpus/../../etc/passwd` return 400 before any `Path.resolve()` is called?
-- Is `MANAGED_ROOTS` fully resolved at import time, not at request time?
-- Does `PUT /config` with `{"path": "/etc/crontab", "content": "..."}` return 422 due to `extra="forbid"`, rather than attempting to write to `/etc/crontab`?
-- Does the `general_exception_handler` log the exception to stderr and return `{"error": "Internal server error"}` — not `str(exc)` — for any unhandled exception in the new routers?
-- Is there any endpoint in `files.py` or `admin.py` that writes to a path determined by caller input rather than server configuration?
+- Does `POST /chat` with `conversation_id="../../passwd"` return 400 before any file path is constructed?
+- Is `validate_id(user_id)` called in the `POST /chat` router handler, not only inside `run_goal_chat`?
+- Does loading a nonexistent goal return 404 with `{"detail": "Goal not found: '...'}` and no file path information in the body?
+- Does the general exception handler return `{"detail": "Internal server error"}` (not `str(exc)`) for any unhandled exception in the chat router?
+- Does the CLI `chat` command call `validate_id` on the `user_id` argument before passing it to `run_goal_chat`?

@@ -50,11 +50,12 @@ function initTabs() {
 async function loadGoals() {
   const sel = document.getElementById('goal-select');
   try {
-    const res = await fetch('/goals_manifest.json');
+    const res = await fetch('/goals');
     if (!res.ok) throw new Error('Failed to load goals');
-    const goals = await res.json();
+    const data = await res.json();
+    const goals = data.goals || [];
     sel.innerHTML = '';
-    if (!goals || goals.length === 0) {
+    if (goals.length === 0) {
       sel.innerHTML = '<option disabled>No goals available</option>';
       return;
     }
@@ -316,13 +317,13 @@ async function loadFileRoots() {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     tree.innerHTML = '';
-    const entries = data.entries || data;
-    if (!Array.isArray(entries) || entries.length === 0) {
-      tree.textContent = 'No files found.';
+    const roots = data.roots;
+    if (!Array.isArray(roots) || roots.length === 0) {
+      tree.textContent = 'No roots found.';
       return;
     }
-    entries.forEach(entry => {
-      renderEntry(tree, entry, '');
+    roots.forEach(root => {
+      renderEntry(tree, { name: root, type: 'directory' }, '');
     });
   } catch (err) {
     tree.textContent = `Error loading files: ${err.message}`;

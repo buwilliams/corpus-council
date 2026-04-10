@@ -134,3 +134,13 @@ class ConfigWriteRequest(BaseModel):
 class GoalsProcessResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     goals_processed: int
+
+
+class GoalSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+
+
+class GoalsListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    goals: list[GoalSummary]
