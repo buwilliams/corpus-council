@@ -90,3 +90,32 @@ class QueryResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
     response: str
     goal: str
+
+
+class FileEntry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str
+    type: Literal["file", "directory"]
+    size: int | None  # None for directories
+
+
+class DirectoryListingResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["directory"]
+    entries: list[FileEntry]
+
+
+class FileContentResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    type: Literal["file"]
+    content: str
+
+
+class FileRootsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    roots: list[str]
+
+
+class FileWriteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    content: str

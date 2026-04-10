@@ -47,9 +47,9 @@ class LLMClient:
             messages=[{"role": "user", "content": rendered_prompt}],
         )
         block = response.content[0]
-        if not hasattr(block, "text"):
+        if not isinstance(block, anthropic_sdk.types.TextBlock):
             raise RuntimeError(f"Unexpected response content block type: {type(block)}")
-        return str(block.text)
+        return block.text
 
 
 __all__ = ["LLMClient"]
