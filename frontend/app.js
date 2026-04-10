@@ -1,7 +1,6 @@
 /* app.js — Corpus Council frontend, plain ES6+, no import/export, no frameworks */
 
 // Module-level state
-let collSession = null;
 let currentFilePath = null;
 let loadedFileContent = '';
 let filesTabLoaded = false;
@@ -70,90 +69,23 @@ async function loadGoals() {
   }
 }
 
-// ─── Plans ────────────────────────────────────────────────────────────────────
+// ─── Goals tab ────────────────────────────────────────────────────────────────
 
-async function loadPlans() {
-  const sel = document.getElementById('plan-select');
-  try {
-    const res = await fetch('/files/plans');
-    if (!res.ok) throw new Error('Failed to load plans');
-    const data = await res.json();
-    const entries = data.entries || [];
-    sel.innerHTML = '';
-    if (entries.length === 0) {
-      sel.innerHTML = '<option disabled>No plans available</option>';
-      return;
-    }
-    entries.forEach(entry => {
-      const name = entry.name || entry;
-      const displayName = typeof name === 'string' ? name.replace(/\.[^.]+$/, '') : String(name);
-      const opt = document.createElement('option');
-      opt.value = displayName;
-      opt.textContent = displayName;
-      sel.appendChild(opt);
-    });
-  } catch (_err) {
-    sel.innerHTML = '<option disabled>No plans available</option>';
-  }
-}
-
-// ─── Query tab ────────────────────────────────────────────────────────────────
-
-function initQueryTab() {
-  document.getElementById('query-submit').addEventListener('click', async () => {
-    const btn = document.getElementById('query-submit');
-    const responseDiv = document.getElementById('query-response');
-    btn.setAttribute('aria-busy', 'true');
-    btn.disabled = true;
-    try {
-      const body = {
-        goal: document.getElementById('goal-select').value,
-        message: document.getElementById('query-input').value,
-      };
-      const modeVal = document.getElementById('query-mode').value;
-      if (modeVal) body.mode = modeVal;
-
-      const res = await fetch('/query', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        responseDiv.textContent = `Error: ${data.error || data.detail || res.status}`;
-      } else {
-        responseDiv.textContent = data.response;
-      }
-    } catch (err) {
-      responseDiv.textContent = `Network error: ${err.message}`;
-    } finally {
-      btn.removeAttribute('aria-busy');
-      btn.disabled = false;
-    }
-  });
-}
-
-// ─── Conversation tab ─────────────────────────────────────────────────────────
-
-function initConversationTab() {
-  const userIdInput = document.getElementById('user-id');
-
-  // Persist userId to localStorage on change
-  userIdInput.addEventListener('input', () => {
-    localStorage.setItem('userId', userIdInput.value);
-  });
-
-  document.getElementById('conv-submit').addEventListener('click', async () => {
-    const btn = document.getElementById('conv-submit');
-    const history = document.getElementById('conv-history');
-    const input = document.getElementById('conv-input');
+function initGoalsTab() {
+  document.getElementById('goals-submit').addEventListener('click', async () => {
+    const btn = document.getElementById('goals-submit');
+    const history = document.getElementById('goals-history');
+    const input = document.getElementById('goals-input');
     const message = input.value.trim();
     if (!message) return;
 
-    const userId = userIdInput.value || localStorage.getItem('userId') || 'anonymous';
-    const modeVal = document.getElementById('conv-mode').value;
+    const goal = document.getElementById('goal-select').value;
+    const userId = document.getElementById('goals-user-id').value.trim();
+    const convIdInput = document.getElementById('goals-conversation-id');
+    const conversationId = convIdInput.value.trim() || null;
+    const modeVal = document.getElementById('goals-mode').value;
 
-    // Append user message
+    // Append user message to history
     const userDiv = document.createElement('div');
     userDiv.className = 'user-turn';
     userDiv.textContent = message;
@@ -164,21 +96,27 @@ function initConversationTab() {
     btn.disabled = true;
     btn.setAttribute('aria-busy', 'true');
     try {
-      const body = { user_id: userId, message };
+      const body = { goal, user_id: userId, message };
+      if (conversationId) body.conversation_id = conversationId;
       if (modeVal) body.mode = modeVal;
 
-      const res = await fetch('/conversation', {
+      const res = await fetch('/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
       const data = await res.json();
+
       const assistantDiv = document.createElement('div');
       assistantDiv.className = 'assistant-turn';
       if (!res.ok) {
         assistantDiv.textContent = `Error: ${data.error || data.detail || res.status}`;
       } else {
         assistantDiv.textContent = data.response;
+        // Auto-populate conversation_id on first response
+        if (!convIdInput.value.trim()) {
+          convIdInput.value = data.conversation_id;
+        }
       }
       history.appendChild(assistantDiv);
       history.scrollTop = history.scrollHeight;
@@ -190,79 +128,6 @@ function initConversationTab() {
     } finally {
       btn.disabled = false;
       btn.removeAttribute('aria-busy');
-    }
-  });
-}
-
-// ─── Collection tab ───────────────────────────────────────────────────────────
-
-function updateCollButton() {
-  const btn = document.getElementById('coll-submit');
-  btn.textContent = collSession === null ? 'Start Collection' : 'Submit Response';
-}
-
-function initCollectionTab() {
-  document.getElementById('coll-submit').addEventListener('click', async () => {
-    const btn = document.getElementById('coll-submit');
-    const promptDiv = document.getElementById('coll-prompt');
-    const input = document.getElementById('coll-input');
-    btn.setAttribute('aria-busy', 'true');
-    btn.disabled = true;
-
-    try {
-      if (collSession === null) {
-        // Start a new session
-        const planId = document.getElementById('plan-select').value;
-        const modeVal = document.getElementById('coll-mode').value;
-        const body = {
-          user_id: localStorage.getItem('userId') || 'anonymous',
-          plan_id: planId,
-        };
-        if (modeVal) body.mode = modeVal;
-
-        const res = await fetch('/collection/start', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          promptDiv.textContent = `Error: ${data.error || data.detail || res.status}`;
-        } else {
-          collSession = { session_id: data.session_id, user_id: body.user_id };
-          promptDiv.textContent = data.first_prompt || data.prompt || '';
-          input.value = '';
-          updateCollButton();
-        }
-      } else {
-        // Submit a response
-        const message = input.value.trim();
-        const res = await fetch('/collection/respond', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            user_id: collSession.user_id,
-            session_id: collSession.session_id,
-            message,
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          promptDiv.textContent = `Error: ${data.error || data.detail || res.status}`;
-        } else if (data.status === 'complete') {
-          promptDiv.textContent = 'Collection complete';
-          collSession = null;
-          updateCollButton();
-        } else {
-          promptDiv.textContent = data.prompt || '';
-          input.value = '';
-        }
-      }
-    } catch (err) {
-      promptDiv.textContent = `Network error: ${err.message}`;
-    } finally {
-      btn.removeAttribute('aria-busy');
-      btn.disabled = false;
     }
   });
 }
@@ -637,19 +502,8 @@ function initAdminTab() {
 
 document.addEventListener('DOMContentLoaded', () => {
   initTabs();
-  initQueryTab();
-  initConversationTab();
-  initCollectionTab();
+  initGoalsTab();
   initFilesTab();
   initAdminTab();
-
-  // Load goals and plans on startup
   loadGoals();
-  loadPlans();
-
-  // Restore userId from localStorage
-  const savedUserId = localStorage.getItem('userId');
-  if (savedUserId) {
-    document.getElementById('user-id').value = savedUserId;
-  }
 });
