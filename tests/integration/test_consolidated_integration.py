@@ -42,11 +42,11 @@ async def test_run_conversation_consolidated_mode(
 
 
 @pytest.mark.llm
-async def test_post_query_consolidated_via_api(
+async def test_post_chat_consolidated_via_api(
     test_config: AppConfig,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Real LLM: POST /query with mode=consolidated via httpx, assert 200."""
+    """Real LLM: POST /chat with mode=consolidated via httpx, assert 200."""
     if not os.environ.get("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
 
@@ -59,8 +59,13 @@ async def test_post_query_consolidated_via_api(
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
-            "/query",
-            json={"goal": "test-goal", "message": "Hello", "mode": "consolidated"},
+            "/chat",
+            json={
+                "goal": "test-goal",
+                "user_id": "testuser",
+                "message": "Hello",
+                "mode": "consolidated",
+            },
         )
 
     assert response.status_code == 200

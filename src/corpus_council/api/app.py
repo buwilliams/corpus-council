@@ -18,18 +18,14 @@ llm = LLMClient(config)
 
 from corpus_council.api.routers import (  # noqa: E402
     admin,
-    collection,
-    conversation,
+    chat,
     corpus,
     files,
-    query,
 )
 
-app.include_router(query.router)
+app.include_router(chat.router)
 app.include_router(corpus.router)
 app.include_router(files.router)
-app.include_router(conversation.router)
-app.include_router(collection.router)
 app.include_router(admin.router)
 
 

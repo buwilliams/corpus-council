@@ -25,35 +25,13 @@ async def client(
         yield c  # type: ignore[misc]
 
 
-async def test_conversation_router_registered(client: httpx.AsyncClient) -> None:
-    """POST /conversation is present in the OpenAPI schema."""
+async def test_chat_router_registered(client: httpx.AsyncClient) -> None:
+    """POST /chat is present in the OpenAPI schema."""
     response = await client.get("/openapi.json")
     assert response.status_code == 200
     paths = response.json()["paths"]
-    assert "/conversation" in paths, (
-        f"Expected /conversation in paths, got: {list(paths.keys())}"
-    )
-    assert "post" in paths["/conversation"]
-
-
-async def test_collection_start_router_registered(client: httpx.AsyncClient) -> None:
-    """POST /collection/start is present in the OpenAPI schema."""
-    response = await client.get("/openapi.json")
-    paths = response.json()["paths"]
-    assert "/collection/start" in paths, (
-        f"Expected /collection/start in paths, got: {list(paths.keys())}"
-    )
-    assert "post" in paths["/collection/start"]
-
-
-async def test_collection_respond_router_registered(client: httpx.AsyncClient) -> None:
-    """POST /collection/respond is present in the OpenAPI schema."""
-    response = await client.get("/openapi.json")
-    paths = response.json()["paths"]
-    assert "/collection/respond" in paths, (
-        f"Expected /collection/respond in paths, got: {list(paths.keys())}"
-    )
-    assert "post" in paths["/collection/respond"]
+    assert "/chat" in paths, f"Expected /chat in paths, got: {list(paths.keys())}"
+    assert "post" in paths["/chat"]
 
 
 async def test_files_router_registered(client: httpx.AsyncClient) -> None:

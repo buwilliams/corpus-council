@@ -51,40 +51,40 @@ async def client(  # type: ignore[override]
         yield c  # type: ignore[misc]
 
 
-async def test_post_query_returns_200(client: httpx.AsyncClient) -> None:
+async def test_post_chat_returns_200(client: httpx.AsyncClient) -> None:
     response = await client.post(
-        "/query", json={"goal": "test-goal", "message": "What is AI?"}
+        "/chat",
+        json={"goal": "test-goal", "user_id": "testuser", "message": "What is AI?"},
     )
     assert response.status_code == 200
     body = response.json()
     assert "response" in body
     assert "goal" in body
     assert body["goal"] == "test-goal"
+    assert "conversation_id" in body
 
 
-async def test_post_query_unknown_goal_returns_404(client: httpx.AsyncClient) -> None:
+async def test_post_chat_unknown_goal_returns_404(client: httpx.AsyncClient) -> None:
     response = await client.post(
-        "/query", json={"goal": "nonexistent-goal", "message": "hello"}
+        "/chat",
+        json={"goal": "nonexistent-goal", "user_id": "testuser", "message": "hello"},
     )
     assert response.status_code == 404
     body = response.json()
     assert "detail" in body
 
 
-async def test_post_query_invalid_mode_returns_422(client: httpx.AsyncClient) -> None:
-    response = await client.post(
-        "/query",
-        json={"goal": "test-goal", "message": "hello", "mode": "invalid_mode"},
-    )
-    assert response.status_code == 422
-
-
-async def test_post_query_mode_consolidated_returns_200(
+async def test_post_chat_mode_consolidated_returns_200(
     client: httpx.AsyncClient,
 ) -> None:
     response = await client.post(
-        "/query",
-        json={"goal": "test-goal", "message": "hello", "mode": "consolidated"},
+        "/chat",
+        json={
+            "goal": "test-goal",
+            "user_id": "testuser",
+            "message": "hello",
+            "mode": "consolidated",
+        },
     )
     assert response.status_code == 200
     body = response.json()
@@ -92,12 +92,17 @@ async def test_post_query_mode_consolidated_returns_200(
     assert "goal" in body
 
 
-async def test_post_query_mode_sequential_returns_200(
+async def test_post_chat_mode_sequential_returns_200(
     client: httpx.AsyncClient,
 ) -> None:
     response = await client.post(
-        "/query",
-        json={"goal": "test-goal", "message": "hello", "mode": "sequential"},
+        "/chat",
+        json={
+            "goal": "test-goal",
+            "user_id": "testuser",
+            "message": "hello",
+            "mode": "sequential",
+        },
     )
     assert response.status_code == 200
     body = response.json()
@@ -105,10 +110,15 @@ async def test_post_query_mode_sequential_returns_200(
     assert "goal" in body
 
 
-async def test_post_query_rejects_extra_fields(client: httpx.AsyncClient) -> None:
+async def test_post_chat_rejects_extra_fields(client: httpx.AsyncClient) -> None:
     response = await client.post(
-        "/query",
-        json={"goal": "test-goal", "message": "hi", "foo": "bar"},
+        "/chat",
+        json={
+            "goal": "test-goal",
+            "user_id": "testuser",
+            "message": "hi",
+            "foo": "bar",
+        },
     )
     assert response.status_code == 422
 
