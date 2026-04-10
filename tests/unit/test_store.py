@@ -145,3 +145,30 @@ def test_write_json_is_atomic(tmp_path: Path) -> None:
     result = store.read_json(path)
 
     assert result == data
+
+
+# ---------------------------------------------------------------------------
+# Tests: goal path helpers
+# ---------------------------------------------------------------------------
+
+
+def test_goal_messages_path_correct_structure(tmp_path: Path) -> None:
+    """goal_messages_path should produce the expected sharded path ending."""
+    store = FileStore(tmp_path)
+
+    result = store.goal_messages_path("abc123ef", "my-goal", "conv-uuid")
+
+    assert str(result).endswith(
+        "users/ab/c1/abc123ef/goals/my-goal/conv-uuid/messages.jsonl"
+    )
+
+
+def test_goal_context_path_correct_structure(tmp_path: Path) -> None:
+    """goal_context_path should produce the expected sharded path ending."""
+    store = FileStore(tmp_path)
+
+    result = store.goal_context_path("abc123ef", "my-goal", "conv-uuid")
+
+    assert str(result).endswith(
+        "users/ab/c1/abc123ef/goals/my-goal/conv-uuid/context.json"
+    )

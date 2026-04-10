@@ -90,6 +90,20 @@ class FileStore:
         return self.user_dir(user_id) / "chat" / "context.json"
 
     # ------------------------------------------------------------------
+    # Convenience path builders — goal chat
+    # ------------------------------------------------------------------
+
+    def goal_messages_path(self, user_id: str, goal: str, conversation_id: str) -> Path:
+        return (
+            self.user_dir(user_id) / "goals" / goal / conversation_id / "messages.jsonl"
+        )
+
+    def goal_context_path(self, user_id: str, goal: str, conversation_id: str) -> Path:
+        return (
+            self.user_dir(user_id) / "goals" / goal / conversation_id / "context.json"
+        )
+
+    # ------------------------------------------------------------------
     # Convenience path builders — collection
     # ------------------------------------------------------------------
 
