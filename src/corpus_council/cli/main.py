@@ -9,17 +9,12 @@ import uvicorn
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 
-from corpus_council.core.collection import respond_collection, start_collection
+from corpus_council.core.chat import run_goal_chat
 from corpus_council.core.config import AppConfig, load_config
-from corpus_council.core.consolidated import run_consolidated_deliberation
-from corpus_council.core.conversation import run_conversation
 from corpus_council.core.corpus import ingest_corpus
-from corpus_council.core.council import load_council_for_goal
-from corpus_council.core.deliberation import run_deliberation
 from corpus_council.core.embeddings import embed_corpus
-from corpus_council.core.goals import load_goal, process_goals
+from corpus_council.core.goals import process_goals
 from corpus_council.core.llm import LLMClient
-from corpus_council.core.retrieval import ChunkResult, retrieve_chunks
 from corpus_council.core.store import FileStore
 from corpus_council.core.validation import validate_id
 
@@ -61,16 +56,30 @@ def goals_process() -> None:
 @app.command()
 def chat(
     user_id: str = typer.Argument(..., help="User identifier"),
+    goal: str | None = typer.Option(None, "--goal", help="Name of the goal to use"),
+    session: str | None = typer.Option(
+        None, "--session", help="Existing conversation ID to resume"
+    ),
     mode: str | None = typer.Option(
         None, "--mode", help="Deliberation mode: sequential or consolidated"
     ),
 ) -> None:
     """Start an interactive chat session."""
+    if goal is None:
+        typer.echo(
+            "Error: --goal is required for chat. Use --goal <goal_name>.", err=True
+        )
+        raise typer.Exit(1)
+
     try:
         validate_id(user_id, "user_id")
     except ValueError as exc:
         typer.echo(f"Invalid user_id: {exc}", err=True)
         raise typer.Exit(1) from exc
+
+    if session is not None and ".." in session:
+        typer.echo("Error: Invalid --session value.", err=True)
+        raise typer.Exit(1)
 
     config = _load_config_or_exit()
     resolved_mode: str = mode or config.deliberation_mode
@@ -83,12 +92,17 @@ def chat(
     store = FileStore(config.data_dir)
     llm = LLMClient(config)
 
-    typer.echo(f"Welcome! Chatting as {user_id}. Type 'quit' or 'exit' to leave.")
+    conversation_id: str = session if session is not None else str(uuid.uuid4())
 
-    session: PromptSession[str] = PromptSession(history=InMemoryHistory())
+    typer.echo(
+        f"Welcome! Chatting as {user_id} with goal '{goal}'."
+        " Type 'quit' or 'exit' to leave."
+    )
+
+    prompt_session: PromptSession[str] = PromptSession(history=InMemoryHistory())
     while True:
         try:
-            message = session.prompt("> ")
+            message = prompt_session.prompt("> ")
         except KeyboardInterrupt:
             break
         except EOFError:
@@ -97,144 +111,21 @@ def chat(
             break
         if not message:
             continue
-        result = run_conversation(
-            user_id, message, config, store, llm, mode=resolved_mode
-        )
-        typer.echo(f"> {result.response}")
-
-
-@app.command()
-def query(
-    message: str = typer.Argument(..., help="Message to send"),
-    goal: str = typer.Option(..., "--goal", help="Name of the goal to use"),
-    mode: str | None = typer.Option(
-        None, "--mode", help="Deliberation mode: sequential or consolidated"
-    ),
-) -> None:
-    """Send a single message using a named goal and print the response, then exit."""
-    config = _load_config_or_exit()
-
-    try:
-        goal_config = load_goal(goal, config.goals_manifest_path)
-    except (FileNotFoundError, ValueError) as exc:
-        typer.echo(f"Error: {exc}", err=True)
-        raise typer.Exit(1) from exc
-
-    resolved_mode: str = mode or config.deliberation_mode
-    if mode is not None and mode not in {"sequential", "consolidated"}:
-        typer.echo(
-            f"Error: --mode must be 'sequential' or 'consolidated', got {mode!r}",
-            err=True,
-        )
-        raise typer.Exit(1)
-
-    members = load_council_for_goal(goal_config, config.personas_dir)
-
-    chunks: list[ChunkResult] = []
-    try:
-        chunks = retrieve_chunks(message, config)
-    except Exception:  # noqa: BLE001
-        chunks = []
-
-    llm = LLMClient(config)
-
-    if resolved_mode == "consolidated":
-        result = run_consolidated_deliberation(message, chunks, members, llm)
-    else:
-        result = run_deliberation(message, chunks, members, llm)
-
-    typer.echo(result.final_response)
-
-
-@app.command()
-def collect(
-    user_id: str = typer.Argument(..., help="User identifier"),
-    session: str | None = typer.Option(None, "--session", help="Existing session ID"),
-    plan: str | None = typer.Option(
-        None, "--plan", help="Plan ID (required when no session given)"
-    ),
-    mode: str | None = typer.Option(
-        None, "--mode", help="Deliberation mode: sequential or consolidated"
-    ),
-) -> None:
-    """Run an interactive data-collection session."""
-    try:
-        validate_id(user_id, "user_id")
-    except ValueError as exc:
-        typer.echo(f"Invalid user_id: {exc}", err=True)
-        raise typer.Exit(1) from exc
-
-    if session is not None:
         try:
-            validate_id(session, "session_id")
-        except ValueError as exc:
-            typer.echo(f"Invalid session_id: {exc}", err=True)
+            resp, conversation_id = run_goal_chat(
+                goal_name=goal,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                message=message,
+                config=config,
+                store=store,
+                llm=llm,
+                mode=resolved_mode,
+            )
+            typer.echo(resp)
+        except KeyError as exc:
+            typer.echo(f"Error: {exc}", err=True)
             raise typer.Exit(1) from exc
-
-    if session is None and plan is None:
-        typer.echo(
-            "Error: --plan is required when --session is not provided.", err=True
-        )
-        raise typer.Exit(1)
-
-    config = _load_config_or_exit()
-    resolved_mode: str = mode or config.deliberation_mode
-    if mode is not None and mode not in {"sequential", "consolidated"}:
-        typer.echo(
-            f"Error: --mode must be 'sequential' or 'consolidated', got {mode!r}",
-            err=True,
-        )
-        raise typer.Exit(1)
-    store = FileStore(config.data_dir)
-    llm = LLMClient(config)
-
-    collect_session: PromptSession[str] = PromptSession(history=InMemoryHistory())
-
-    if session is None:
-        session_id = str(uuid.uuid4())
-        collection_session = start_collection(
-            user_id=user_id,
-            plan_id=plan,  # type: ignore[arg-type]
-            session_id=session_id,
-            config=config,
-            store=store,
-            llm=llm,
-            mode=resolved_mode,
-        )
-    else:
-        session_id = session
-        try:
-            first_response = collect_session.prompt("> ")
-        except (KeyboardInterrupt, EOFError):
-            return
-        collection_session = respond_collection(
-            user_id=user_id,
-            session_id=session_id,
-            message=first_response,
-            config=config,
-            store=store,
-            llm=llm,
-            mode=resolved_mode,
-        )
-
-    while collection_session.status != "complete":
-        if collection_session.next_prompt:
-            typer.echo(collection_session.next_prompt)
-        try:
-            response = collect_session.prompt("> ")
-        except (KeyboardInterrupt, EOFError):
-            break
-        collection_session = respond_collection(
-            user_id=user_id,
-            session_id=session_id,
-            message=response,
-            config=config,
-            store=store,
-            llm=llm,
-            mode=resolved_mode,
-        )
-
-    typer.echo("Collection complete.")
 
 
 @app.command()
