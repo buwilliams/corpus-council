@@ -16,11 +16,21 @@ config = load_config(Path("config.yaml"))
 store = FileStore(config.data_dir)
 llm = LLMClient(config)
 
-from corpus_council.api.routers import corpus, files, query  # noqa: E402
+from corpus_council.api.routers import (  # noqa: E402
+    admin,
+    collection,
+    conversation,
+    corpus,
+    files,
+    query,
+)
 
 app.include_router(query.router)
 app.include_router(corpus.router)
 app.include_router(files.router)
+app.include_router(conversation.router)
+app.include_router(collection.router)
+app.include_router(admin.router)
 
 
 @app.exception_handler(FileNotFoundError)
@@ -42,3 +52,11 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
 
 
 __all__ = ["app", "config", "store", "llm"]
+
+from pathlib import Path as _Path  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402  # noqa: E402
+
+_frontend_dir = _Path("frontend")
+if _frontend_dir.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(_frontend_dir), html=True), name="ui")
