@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Corpus Council</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Corpus Council</h1>
+
+    <nav>
+      <ul>
+        <li><button data-tab="query" aria-current="page">Query</button></li>
+        <li><button data-tab="conversation">Conversation</button></li>
+        <li><button data-tab="collection">Collection</button></li>
+        <li><button data-tab="files">Files</button></li>
+        <li><button data-tab="admin">Admin</button></li>
+      </ul>
+    </nav>
+
+    <!-- Query Tab -->
+    <section id="tab-query">
+      <h2>Query</h2>
+      <label for="goal-select">Goal</label>
+      <select id="goal-select">
+        <option value="">Loading goals...</option>
+      </select>
+
+      <label for="query-mode">Mode</label>
+      <select id="query-mode">
+        <option value="">Default</option>
+        <option value="sequential">Sequential</option>
+        <option value="consolidated">Consolidated</option>
+      </select>
+
+      <label for="query-input">Question</label>
+      <textarea id="query-input" placeholder="Enter your question..."></textarea>
+
+      <button id="query-submit">Submit</button>
+
+      <div id="query-response"></div>
+    </section>
+
+    <!-- Conversation Tab -->
+    <section id="tab-conversation">
+      <h2>Conversation</h2>
+      <label for="user-id">User ID</label>
+      <input id="user-id" type="text" placeholder="User ID">
+
+      <label for="conv-mode">Mode</label>
+      <select id="conv-mode">
+        <option value="">Default</option>
+        <option value="sequential">Sequential</option>
+        <option value="consolidated">Consolidated</option>
+      </select>
+
+      <div id="conv-history"></div>
+
+      <label for="conv-input">Message</label>
+      <textarea id="conv-input" placeholder="Type your message..."></textarea>
+
+      <button id="conv-submit">Send</button>
+    </section>
+
+    <!-- Collection Tab -->
+    <section id="tab-collection">
+      <h2>Collection</h2>
+      <label for="plan-select">Plan</label>
+      <select id="plan-select">
+        <option value="">Loading plans...</option>
+      </select>
+
+      <label for="coll-mode">Mode</label>
+      <select id="coll-mode">
+        <option value="">Default</option>
+        <option value="sequential">Sequential</option>
+        <option value="consolidated">Consolidated</option>
+      </select>
+
+      <div id="coll-prompt"></div>
+
+      <label for="coll-input">Response</label>
+      <textarea id="coll-input" placeholder="Your response..."></textarea>
+
+      <button id="coll-submit">Start Collection</button>
+    </section>
+
+    <!-- Files Tab -->
+    <section id="tab-files">
+      <h2>Files</h2>
+      <nav id="file-breadcrumb" aria-label="breadcrumb"></nav>
+
+      <div id="file-tree"></div>
+
+      <div id="file-editor" style="display:none">
+        <textarea id="file-content"></textarea>
+        <span id="unsaved-indicator" style="display:none">(unsaved)</span>
+        <button id="file-save">Save</button>
+        <button id="file-delete">Delete</button>
+      </div>
+
+      <details id="new-file-form">
+        <summary>New file</summary>
+        <input id="new-file-name" type="text" placeholder="filename.md">
+        <button id="new-file-create">Create</button>
+      </details>
+    </section>
+
+    <!-- Admin Tab -->
+    <section id="tab-admin">
+      <h2>Admin</h2>
+      <label for="config-editor">Config (YAML)</label>
+      <textarea id="config-editor"></textarea>
+      <button id="config-save">Save Config</button>
+      <button id="config-reload">Reload</button>
+
+      <div role="group">
+        <button id="btn-ingest">Ingest Corpus</button>
+        <button id="btn-embed">Embed Corpus</button>
+        <button id="btn-process-goals">Process Goals</button>
+      </div>
+
+      <div id="admin-output"></div>
+    </section>
+  </main>
+
+  <script src="app.js" defer></script>
+</body>
+</html>
