@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import dataclasses
-from pathlib import Path
 
 from fastapi import APIRouter
 
@@ -23,7 +22,7 @@ async def post_corpus_ingest(request: CorpusIngestRequest) -> CorpusIngestRespon
     from corpus_council.api.app import config
 
     validated_path = validate_path_containment(
-        Path(request.path), config.corpus_dir, "corpus path"
+        config.corpus_dir / request.path, config.corpus_dir, "corpus path"
     )
     modified_config = dataclasses.replace(config, corpus_dir=validated_path)
     result = ingest_corpus(modified_config)
