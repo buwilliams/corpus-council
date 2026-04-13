@@ -17,7 +17,6 @@ class AppConfig:
     data_dir: Path
     corpus_dir: Path
     council_dir: Path
-    templates_dir: Path
     plans_dir: Path
     chunk_max_size: int
     retrieval_top_k: int
@@ -147,7 +146,6 @@ def load_config(path: str | Path) -> AppConfig:
         data_dir=_resolve_path(config_dir, data.get("data_dir", "data")),
         corpus_dir=_resolve_path(config_dir, data.get("corpus_dir", "corpus")),
         council_dir=_resolve_path(config_dir, data.get("council_dir", "council")),
-        templates_dir=_resolve_path(config_dir, data.get("templates_dir", "templates")),
         plans_dir=_resolve_path(config_dir, data.get("plans_dir", "plans")),
         chunk_max_size=chunk_max_size,
         retrieval_top_k=retrieval_top_k,

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -11,18 +10,8 @@ from corpus_council.core.council import CouncilMember
 from corpus_council.core.deliberation import DeliberationResult
 from corpus_council.core.llm import LLMClient
 
-_TEMPLATES_SRC = Path(__file__).parent.parent.parent / "templates"
 
-
-def _copy_templates(tmp_path: Path) -> Path:
-    tpl_dir = tmp_path / "templates"
-    tpl_dir.mkdir(parents=True, exist_ok=True)
-    for f in _TEMPLATES_SRC.glob("*.md"):
-        shutil.copy2(f, tpl_dir / f.name)
-    return tpl_dir
-
-
-def _make_config(templates_dir: Path) -> Any:
+def _make_config() -> Any:
     from corpus_council.core.config import AppConfig
 
     return AppConfig(
@@ -30,11 +19,10 @@ def _make_config(templates_dir: Path) -> Any:
         llm_model="claude-haiku-4-5-20251001",
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
-        data_dir=templates_dir.parent / "data",
-        corpus_dir=templates_dir.parent / "corpus",
-        council_dir=templates_dir.parent / "council",
-        templates_dir=templates_dir,
-        plans_dir=templates_dir.parent / "plans",
+        data_dir=Path("/tmp/test/data"),
+        corpus_dir=Path("/tmp/test/corpus"),
+        council_dir=Path("/tmp/test/council"),
+        plans_dir=Path("/tmp/test/plans"),
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",
@@ -110,14 +98,12 @@ def _make_escalating_council_output(
     return "\n\n".join(blocks)
 
 
-def test_council_consolidated_template_renders_all_personas(tmp_path: Path) -> None:
+def test_council_consolidated_template_renders_all_personas() -> None:
     """Real render_template() renders council_consolidated with all member personas."""
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+    config = _make_config()
     llm = LLMClient(config)
     members = _make_members()
 
-    # Pass actual CouncilMember objects so the template can iterate them
     rendered = llm.render_template(
         "council_consolidated",
         {
@@ -132,10 +118,9 @@ def test_council_consolidated_template_renders_all_personas(tmp_path: Path) -> N
         assert m.persona in rendered
 
 
-def test_evaluator_consolidated_template_renders_inputs(tmp_path: Path) -> None:
+def test_evaluator_consolidated_template_renders_inputs() -> None:
     """Real render_template() renders evaluator_consolidated with user_message."""
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+    config = _make_config()
     llm = LLMClient(config)
 
     user_message = "Explain machine learning."
@@ -160,11 +145,10 @@ def test_evaluator_consolidated_template_renders_inputs(tmp_path: Path) -> None:
 
 
 def test_run_consolidated_deliberation_makes_exactly_two_calls(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stub LLMClient.call; assert exactly 2 calls with correct template names."""
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+    config = _make_config()
     llm = LLMClient(config)
     members = _make_members()
 
@@ -192,11 +176,10 @@ def test_run_consolidated_deliberation_makes_exactly_two_calls(
 
 
 def test_run_consolidated_deliberation_returns_deliberation_result(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stub LLMClient.call; assert result is DeliberationResult with non-empty body."""
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+    config = _make_config()
     llm = LLMClient(config)
     members = _make_members()
 
@@ -221,11 +204,10 @@ def test_run_consolidated_deliberation_returns_deliberation_result(
 
 
 def test_run_consolidated_deliberation_extracts_escalation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Stub escalation from Domain Analyst; verify escalation fields and context."""
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+    config = _make_config()
     llm = LLMClient(config)
     members = _make_members()
 
@@ -256,7 +238,5 @@ def test_run_consolidated_deliberation_extracts_escalation(
 
     assert len(evaluator_contexts) == 1
     ctx = evaluator_contexts[0]
-    # Raw council output is forwarded to the evaluator.
     assert "out of scope" in ctx.get("council_responses", "")
-    # Parsed escalation summary is also passed separately.
     assert "out of scope" in ctx.get("escalation_summary", "")

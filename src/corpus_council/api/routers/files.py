@@ -22,7 +22,6 @@ def _get_roots() -> dict[str, Path]:
     return {
         "corpus": config.corpus_dir.resolve(),
         "council": config.council_dir.resolve(),
-        "templates": config.templates_dir.resolve(),
         "plans": config.plans_dir.resolve(),
         "goals": config.goals_dir.resolve(),
     }

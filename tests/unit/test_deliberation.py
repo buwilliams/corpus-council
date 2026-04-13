@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 from typing import Any
 
@@ -14,8 +13,6 @@ from corpus_council.core.deliberation import (
 )
 from corpus_council.core.llm import LLMClient
 from corpus_council.core.retrieval import ChunkResult
-
-_TEMPLATES_SRC = Path(__file__).parent.parent.parent / "templates"
 
 
 class TestLLMClient(LLMClient):
@@ -43,7 +40,6 @@ class TestLLMClient(LLMClient):
         )
         if template_name == "escalation_check":
             if self.trigger_escalation_for:
-                # Identify member by escalation_rule (unique per member)
                 escalation_rule: str = context.get("escalation_rule", "")
                 member_name = self._member_name_for_rule(escalation_rule)
                 if member_name == self.trigger_escalation_for:
@@ -61,29 +57,20 @@ class TestLLMClient(LLMClient):
         return rule_to_name.get(escalation_rule, "")
 
 
-def _make_config(templates_dir: Path) -> AppConfig:
+def _make_config() -> AppConfig:
     return AppConfig(
         llm_provider="anthropic",
         llm_model="claude-3-5-haiku-20241022",
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
-        data_dir=templates_dir.parent / "data",
-        corpus_dir=templates_dir.parent / "corpus",
-        council_dir=templates_dir.parent / "council",
-        templates_dir=templates_dir,
-        plans_dir=templates_dir.parent / "plans",
+        data_dir=Path("/tmp/test/data"),
+        corpus_dir=Path("/tmp/test/corpus"),
+        council_dir=Path("/tmp/test/council"),
+        plans_dir=Path("/tmp/test/plans"),
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",
     )
-
-
-def _copy_templates(tmp_path: Path) -> Path:
-    tpl_dir = tmp_path / "templates"
-    tpl_dir.mkdir(parents=True, exist_ok=True)
-    for f in _TEMPLATES_SRC.glob("*.md"):
-        shutil.copy2(f, tpl_dir / f.name)
-    return tpl_dir
 
 
 def _make_members() -> list[CouncilMember]:
@@ -126,9 +113,8 @@ def _make_members() -> list[CouncilMember]:
 # ---------------------------------------------------------------------------
 
 
-def test_deliberation_normal_path_all_members_run(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_deliberation_normal_path_all_members_run() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -141,20 +127,16 @@ def test_deliberation_normal_path_all_members_run(tmp_path: Path) -> None:
 
     assert isinstance(result, DeliberationResult)
     assert not result.escalation_triggered
-    # log has entries for all 3 members
     assert len(result.deliberation_log) == 3
-    # all non-position-1 members appear in the log
     non_pos1_positions = {e.position for e in result.deliberation_log if e.position != 1}
     assert 2 in non_pos1_positions
     assert 3 in non_pos1_positions
-    # position-1 is in the log
     pos1_entries = [e for e in result.deliberation_log if e.position == 1]
     assert len(pos1_entries) == 1
 
 
-def test_deliberation_position_1_always_runs_last(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_deliberation_position_1_always_runs_last() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -170,12 +152,8 @@ def test_deliberation_position_1_always_runs_last(tmp_path: Path) -> None:
     assert final_entry.member_name == "Final Synthesizer"
 
 
-def test_deliberation_escalation_triggered_all_members_run(
-    tmp_path: Path,
-) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
-    # Trigger escalation for position-3 (Adversarial Critic)
+def test_deliberation_escalation_triggered_all_members_run() -> None:
+    config = _make_config()
     llm = TestLLMClient(config, trigger_escalation_for="Adversarial Critic")
     members = _make_members()
 
@@ -187,19 +165,14 @@ def test_deliberation_escalation_triggered_all_members_run(
     )
 
     assert result.escalation_triggered is True
-    # position-1 must still appear in the log (synthesis step)
     position_1_entries = [e for e in result.deliberation_log if e.position == 1]
     assert len(position_1_entries) == 1
-    # In parallel mode all non-position-1 members run concurrently — position-2 also runs
     position_2_entries = [e for e in result.deliberation_log if e.position == 2]
     assert len(position_2_entries) == 1
 
 
-def test_deliberation_escalation_path_uses_resolution_template(
-    tmp_path: Path,
-) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_deliberation_escalation_path_uses_resolution_template() -> None:
+    config = _make_config()
     llm = TestLLMClient(config, trigger_escalation_for="Adversarial Critic")
     members = _make_members()
 
@@ -214,9 +187,8 @@ def test_deliberation_escalation_path_uses_resolution_template(
     assert "escalation_resolution" in template_names
 
 
-def test_deliberation_final_response_not_empty(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_deliberation_final_response_not_empty() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -230,11 +202,8 @@ def test_deliberation_final_response_not_empty(tmp_path: Path) -> None:
     assert result.final_response != ""
 
 
-def test_deliberation_deliberation_log_has_member_name_and_position(
-    tmp_path: Path,
-) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_deliberation_deliberation_log_has_member_name_and_position() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -254,7 +223,7 @@ def test_deliberation_deliberation_log_has_member_name_and_position(
 
 
 # ---------------------------------------------------------------------------
-# New unit tests: _format_chunks
+# _format_chunks
 # ---------------------------------------------------------------------------
 
 
@@ -297,13 +266,12 @@ def test_format_chunks_multiple_chunks() -> None:
 
 
 # ---------------------------------------------------------------------------
-# New unit tests: parallel execution correctness
+# Parallel execution correctness
 # ---------------------------------------------------------------------------
 
 
-def test_parallel_all_non_position1_members_called(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_parallel_all_non_position1_members_called() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -319,9 +287,8 @@ def test_parallel_all_non_position1_members_called(tmp_path: Path) -> None:
     assert 3 in positions_in_log
 
 
-def test_parallel_position1_never_in_executor_phase(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_parallel_position1_never_in_executor_phase() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -333,16 +300,14 @@ def test_parallel_position1_never_in_executor_phase(tmp_path: Path) -> None:
     )
 
     member_deliberation_calls = [c for c in llm.calls if c["template"] == "member_deliberation"]
-    # Only 2 member_deliberation calls (positions 2 and 3); position-1 uses final_synthesis
     assert len(member_deliberation_calls) == 2
 
     final_synthesis_calls = [c for c in llm.calls if c["template"] == "final_synthesis"]
     assert len(final_synthesis_calls) == 1
 
 
-def test_escalation_all_members_complete_when_one_escalates(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_escalation_all_members_complete_when_one_escalates() -> None:
+    config = _make_config()
     llm = TestLLMClient(config, trigger_escalation_for="Adversarial Critic")
     members = _make_members()
 
@@ -353,16 +318,14 @@ def test_escalation_all_members_complete_when_one_escalates(tmp_path: Path) -> N
         llm=llm,
     )
 
-    # All non-position-1 members still appear in the log
     non_pos1_entries = [e for e in result.deliberation_log if e.position != 1]
     non_pos1_positions = {e.position for e in non_pos1_entries}
     assert 2 in non_pos1_positions
     assert 3 in non_pos1_positions
 
 
-def test_escalation_uses_escalation_resolution_template(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_escalation_uses_escalation_resolution_template() -> None:
+    config = _make_config()
     llm = TestLLMClient(config, trigger_escalation_for="Adversarial Critic")
     members = _make_members()
 
@@ -378,9 +341,8 @@ def test_escalation_uses_escalation_resolution_template(tmp_path: Path) -> None:
     assert "final_synthesis" not in template_names
 
 
-def test_member_responses_in_synthesis_context(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_member_responses_in_synthesis_context() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -396,9 +358,8 @@ def test_member_responses_in_synthesis_context(tmp_path: Path) -> None:
     assert "member_responses" in synthesis_calls[0]["context"]
 
 
-def test_system_prompt_set_on_member_deliberation_calls(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_system_prompt_set_on_member_deliberation_calls() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -412,21 +373,18 @@ def test_system_prompt_set_on_member_deliberation_calls(tmp_path: Path) -> None:
     member_deliberation_calls = [c for c in llm.calls if c["template"] == "member_deliberation"]
     assert len(member_deliberation_calls) == 2
 
-    # Build a map of persona -> member name for verification
     persona_map = {m.persona: m.name for m in members if m.position != 1}
 
     for call in member_deliberation_calls:
         sp = call["system_prompt"]
         assert sp is not None and sp != "", "system_prompt must be non-empty for member_deliberation"
-        # The system prompt must contain at least one of the non-position-1 member personas
         assert any(persona in sp for persona in persona_map), (
             f"system_prompt did not contain any member persona. Got: {sp!r}"
         )
 
 
-def test_conversation_history_in_member_deliberation_context(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_conversation_history_in_member_deliberation_context() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 
@@ -447,9 +405,8 @@ def test_conversation_history_in_member_deliberation_context(tmp_path: Path) -> 
         assert call["context"]["conversation_history"] == history
 
 
-def test_goal_description_in_system_prompt(tmp_path: Path) -> None:
-    tpl_dir = _copy_templates(tmp_path)
-    config = _make_config(tpl_dir)
+def test_goal_description_in_system_prompt() -> None:
+    config = _make_config()
     llm = TestLLMClient(config)
     members = _make_members()
 

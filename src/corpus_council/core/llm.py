@@ -8,20 +8,21 @@ import jinja2
 
 from corpus_council.core.config import AppConfig
 
+_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
+
 
 class LLMClient:
     def __init__(self, config: AppConfig) -> None:
         self._config = config
 
     def render_template(self, template_name: str, context: dict[str, Any]) -> str:
-        templates_dir: Path = self._config.templates_dir
         if not Path(template_name).suffix:
             template_name = template_name + ".md"
-        template_path = templates_dir / template_name
+        template_path = _TEMPLATES_DIR / template_name
         if not template_path.exists():
             raise FileNotFoundError(f"Template file not found: {template_path}")
         env = jinja2.Environment(
-            loader=jinja2.FileSystemLoader(str(templates_dir)),
+            loader=jinja2.FileSystemLoader(str(_TEMPLATES_DIR)),
             autoescape=False,
         )
         template = env.get_template(template_name)

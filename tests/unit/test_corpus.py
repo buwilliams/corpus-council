@@ -27,7 +27,6 @@ def _make_config(tmp_path: Path, chunk_max_size: int = 512) -> AppConfig:
         data_dir=data_dir,
         corpus_dir=corpus_dir,
         council_dir=tmp_path / "council",
-        templates_dir=tmp_path / "templates",
         plans_dir=tmp_path / "plans",
         chunk_max_size=chunk_max_size,
         retrieval_top_k=5,

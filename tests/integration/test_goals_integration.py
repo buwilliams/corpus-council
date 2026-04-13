@@ -9,7 +9,6 @@ import pytest
 import yaml
 
 PROJECT_ROOT = Path(__file__).parent.parent.parent
-TEMPLATES_DIR = PROJECT_ROOT / "templates"
 REAL_GOALS_DIR = PROJECT_ROOT / "goals"
 
 
@@ -61,7 +60,6 @@ def _write_config(tmp_path: Path) -> Path:
         "goals_dir": str(tmp_path / "goals"),
         "personas_dir": str(tmp_path / "council"),
         "goals_manifest_path": str(tmp_path / "goals_manifest.json"),
-        "templates_dir": str(TEMPLATES_DIR),
         "plans_dir": str(tmp_path / "plans"),
         "chunking": {"max_size": 512},
         "retrieval": {"top_k": 3},

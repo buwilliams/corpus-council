@@ -35,3 +35,4 @@
 - Code changes touching council orchestration or embedding retrieval require explicit reasoning about performance impact.
 - Any new dependency (Python package or otherwise) must be justified against the flat-file-first principle before it is added.
 - All LLM prompt templates must be reviewed as markdown files — prompt logic is not buried in code.
+- `README.md` must be kept up to date with every spec. Any change to API endpoints, request/response shapes, CLI commands, deliberation modes, configuration keys, or architecture must be reflected in `README.md` before the spec is considered done.

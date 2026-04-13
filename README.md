@@ -152,7 +152,7 @@ Lower `position` = higher authority. Position 1 always has final say.
 
 **3. Define your goals** — add goal markdown files to `goals/`. Each goal declares a `desired_outcome`, a `council` list (persona files + authority tiers), and a `corpus_path`. See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md).
 
-**4. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, directory paths, and `deliberation_mode`. API keys are always set via environment variables, never in config. Three additional keys control the goals system:
+**4. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, directory paths, and `deliberation_mode`. API keys are always set via environment variables, never in config. Prompt templates are bundled with the package and are not user-configurable. Three additional keys control the goals system:
 
 | Key | Default | Description |
 |-----|---------|-------------|

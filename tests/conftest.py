@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import pytest
@@ -135,22 +134,6 @@ def plans_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def templates_dir(tmp_path: Path) -> Path:
-    """Copy real templates from templates/ into tmp_path/templates."""
-    src = Path(__file__).parent.parent / "templates"
-    if not src.exists():
-        pytest.skip("templates/ not yet created")
-
-    d = tmp_path / "templates"
-    d.mkdir(parents=True, exist_ok=True)
-
-    for template_file in src.glob("*.md"):
-        shutil.copy2(template_file, d / template_file.name)
-
-    return d
-
-
-@pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
     """Create and return tmp_path/data."""
     d = tmp_path / "data"
@@ -190,7 +173,6 @@ def test_config(
     corpus_dir: Path,
     council_dir: Path,
     plans_dir: Path,
-    templates_dir: Path,
     data_dir: Path,
     goals_dir: Path,
 ) -> AppConfig:
@@ -203,7 +185,6 @@ def test_config(
         data_dir=data_dir,
         corpus_dir=corpus_dir,
         council_dir=council_dir,
-        templates_dir=templates_dir,
         plans_dir=plans_dir,
         chunk_max_size=512,
         retrieval_top_k=3,
