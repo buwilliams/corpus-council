@@ -24,7 +24,7 @@ async def client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> httpx.AsyncClient:
     monkeypatch.setattr(app_module, "config", test_config)
-    monkeypatch.setattr(app_module, "store", FileStore(test_config.data_dir))
+    monkeypatch.setattr(app_module, "store", FileStore(test_config.users_dir))
     monkeypatch.setattr(app_module, "llm", LLMClient(test_config))
     monkeypatch.setattr(admin_module, "CONFIG_PATH", tmp_path / "config.yaml")
 

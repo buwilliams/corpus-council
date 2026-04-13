@@ -88,7 +88,7 @@ def chat(
             err=True,
         )
         raise typer.Exit(1)
-    store = FileStore(config.data_dir)
+    store = FileStore(config.users_dir)
     llm = LLMClient(config)
 
     conversation_id: str = session if session is not None else str(uuid.uuid4())

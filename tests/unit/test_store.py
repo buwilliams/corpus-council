@@ -14,17 +14,18 @@ from corpus_council.core.store import FileStore
 
 def test_user_dir_correct_sharding(tmp_path: Path) -> None:
     """user_id 'abc123ef' should produce a path ending with ab/c1/abc123ef."""
-    store = FileStore(tmp_path)
+    users_dir = tmp_path / "users"
+    store = FileStore(users_dir)
     user_id = "abc123ef"
 
     result = store.user_dir(user_id)
 
-    assert result == tmp_path / "users" / "ab" / "c1" / "abc123ef"
+    assert result == users_dir / "ab" / "c1" / "abc123ef"
 
 
 def test_user_dir_raises_for_short_id(tmp_path: Path) -> None:
     """user_id 'ab' (len < 4) should raise ValueError."""
-    store = FileStore(tmp_path)
+    store = FileStore(tmp_path / "users")
 
     with pytest.raises(ValueError):
         store.user_dir("ab")
@@ -154,7 +155,7 @@ def test_write_json_is_atomic(tmp_path: Path) -> None:
 
 def test_goal_messages_path_correct_structure(tmp_path: Path) -> None:
     """goal_messages_path should produce the expected sharded path ending."""
-    store = FileStore(tmp_path)
+    store = FileStore(tmp_path / "users")
 
     result = store.goal_messages_path("abc123ef", "my-goal", "conv-uuid")
 
@@ -165,7 +166,7 @@ def test_goal_messages_path_correct_structure(tmp_path: Path) -> None:
 
 def test_goal_context_path_correct_structure(tmp_path: Path) -> None:
     """goal_context_path should produce the expected sharded path ending."""
-    store = FileStore(tmp_path)
+    store = FileStore(tmp_path / "users")
 
     result = store.goal_context_path("abc123ef", "my-goal", "conv-uuid")
 

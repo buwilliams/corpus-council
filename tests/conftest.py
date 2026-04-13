@@ -169,7 +169,7 @@ def test_config(
 @pytest.fixture
 def file_store(test_config: AppConfig) -> FileStore:
     """Return a FileStore backed by the test data directory."""
-    return FileStore(test_config.data_dir)
+    return FileStore(test_config.users_dir)
 
 
 def test_conftest_imports() -> None:

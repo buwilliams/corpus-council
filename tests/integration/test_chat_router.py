@@ -41,7 +41,7 @@ async def client(
     monkeypatch: pytest.MonkeyPatch,
 ) -> httpx.AsyncClient:
     monkeypatch.setattr(app_module, "config", test_config)
-    monkeypatch.setattr(app_module, "store", FileStore(test_config.data_dir))
+    monkeypatch.setattr(app_module, "store", FileStore(test_config.users_dir))
     monkeypatch.setattr(app_module, "llm", ChatTestLLM(test_config))
 
     from corpus_council.api.app import app
@@ -101,7 +101,7 @@ async def test_post_chat_continuation_uses_same_conversation_id(
     assert second_response.json()["conversation_id"] == conv_id
 
     # Verify persistence: messages.jsonl must have exactly 2 records
-    store = FileStore(test_config.data_dir)
+    store = FileStore(test_config.users_dir)
     messages_path = store.goal_messages_path("user0002", "test-goal", conv_id)
     records = store.read_jsonl(messages_path)
     assert len(records) == 2, (

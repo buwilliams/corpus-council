@@ -13,7 +13,7 @@ from corpus_council.core.store import FileStore
 app = FastAPI(title="Corpus Council")
 
 config = load_config(Path("config.yaml"))
-store = FileStore(config.data_dir)
+store = FileStore(config.users_dir)
 llm = LLMClient(config)
 
 from corpus_council.api.routers import (  # noqa: E402

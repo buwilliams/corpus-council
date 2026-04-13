@@ -11,8 +11,9 @@ from typing import Any
 class FileStore:
     """Single gateway for all user/session file-based persistence.
 
+    Must be initialised with the users root (e.g. ``config.users_dir``).
     Data is sharded into a 2-level directory structure:
-        {base}/users/{user_id[0:2]}/{user_id[2:4]}/{user_id}/
+        {base}/{user_id[0:2]}/{user_id[2:4]}/{user_id}/
     """
 
     def __init__(self, base: Path) -> None:
@@ -25,7 +26,7 @@ class FileStore:
     def user_dir(self, user_id: str) -> Path:
         if len(user_id) < 4:
             raise ValueError(f"user_id must be at least 4 characters, got: {user_id!r}")
-        return self.base / "users" / user_id[0:2] / user_id[2:4] / user_id
+        return self.base / user_id[0:2] / user_id[2:4] / user_id
 
     # ------------------------------------------------------------------
     # Core I/O primitives
