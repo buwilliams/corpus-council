@@ -173,3 +173,36 @@ def test_goal_context_path_correct_structure(tmp_path: Path) -> None:
     assert str(result).endswith(
         "users/ab/c1/abc123ef/goals/my-goal/conv-uuid/context.json"
     )
+
+
+def test_filestore_with_users_dir_writes_to_correct_path(tmp_path: Path) -> None:
+    """FileStore(users_dir) writes messages.jsonl at the expected sharded path."""
+    users_dir = tmp_path / "users"
+    store = FileStore(users_dir)
+    user_id = "abc123ef"
+    goal = "test-goal"
+    conv = "conv-001"
+
+    path = store.goal_messages_path(user_id, goal, conv)
+    store.append_jsonl(path, {"msg": "hello"})
+
+    expected = (
+        tmp_path / "users" / "ab" / "c1" / "abc123ef" / "goals" / "test-goal" / "conv-001" / "messages.jsonl"
+    )
+    assert expected.exists()
+
+
+def test_filestore_users_dir_base_read_back(tmp_path: Path) -> None:
+    """Write a record via append_jsonl then read it back; content must be equal."""
+    users_dir = tmp_path / "users"
+    store = FileStore(users_dir)
+    user_id = "abc123ef"
+    goal = "test-goal"
+    conv = "conv-001"
+    record = {"role": "user", "content": "hello world"}
+
+    path = store.goal_messages_path(user_id, goal, conv)
+    store.append_jsonl(path, record)
+    result = store.read_jsonl(path)
+
+    assert result == [record]
