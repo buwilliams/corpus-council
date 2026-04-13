@@ -109,10 +109,8 @@ def council_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
-    """Create and return tmp_path/data."""
-    d = tmp_path / "data"
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+    """Return tmp_path as the data directory root."""
+    return tmp_path
 
 
 @pytest.fixture
