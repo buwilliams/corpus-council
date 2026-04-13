@@ -9,11 +9,6 @@ embedding:
   model: all-MiniLM-L6-v2
 
 data_dir: data
-corpus_dir: corpus
-council_dir: council
-goals_dir: goals
-personas_dir: council
-goals_manifest_path: goals_manifest.json
 
 chunking:
   max_size: 512

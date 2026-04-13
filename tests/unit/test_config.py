@@ -91,8 +91,12 @@ def test_load_config_raises_on_missing_required_key(tmp_path: Path) -> None:
         load_config(config_file)
 
 
-def test_load_config_includes_goals_fields(tmp_path: Path) -> None:
-    """load_config resolves goals_dir, personas_dir, and goals_manifest_path."""
+@pytest.mark.parametrize(
+    "removed_key",
+    ["goals_dir", "personas_dir", "goals_manifest_path", "corpus_dir", "council_dir"],
+)
+def test_load_config_raises_on_removed_key(tmp_path: Path, removed_key: str) -> None:
+    """load_config raises ValueError when a removed config key is present in YAML."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         "llm:\n"
@@ -102,9 +106,7 @@ def test_load_config_includes_goals_fields(tmp_path: Path) -> None:
         "  provider: sentence-transformers\n"
         "  model: all-MiniLM-L6-v2\n"
         "data_dir: data\n"
-        "goals_dir: my_goals\n"
-        "personas_dir: my_personas\n"
-        "goals_manifest_path: my_manifest.json\n"
+        f"{removed_key}: some_value\n"
         "chunking:\n"
         "  max_size: 512\n"
         "retrieval:\n"
@@ -112,23 +114,12 @@ def test_load_config_includes_goals_fields(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    config = load_config(config_file)
-
-    assert isinstance(config.goals_dir, Path)
-    assert config.goals_dir.is_absolute()
-    assert config.goals_dir == (tmp_path / "my_goals").resolve()
-
-    assert isinstance(config.personas_dir, Path)
-    assert config.personas_dir.is_absolute()
-    assert config.personas_dir == (tmp_path / "my_personas").resolve()
-
-    assert isinstance(config.goals_manifest_path, Path)
-    assert config.goals_manifest_path.is_absolute()
-    assert config.goals_manifest_path == (tmp_path / "my_manifest.json").resolve()
+    with pytest.raises(ValueError, match=f"Config key {removed_key!r} is no longer supported"):
+        load_config(config_file)
 
 
-def test_load_config_goals_fields_use_defaults(tmp_path: Path) -> None:
-    """load_config uses defaults for goals_dir, personas_dir, goals_manifest_path."""
+def test_load_config_derived_paths_come_from_data_dir(tmp_path: Path) -> None:
+    """Derived path properties are rooted at data_dir, not config_dir."""
     config_file = tmp_path / "config.yaml"
     config_file.write_text(
         "llm:\n"
@@ -146,7 +137,13 @@ def test_load_config_goals_fields_use_defaults(tmp_path: Path) -> None:
     )
 
     config = load_config(config_file)
+    data_dir = (tmp_path / "data").resolve()
 
-    assert config.goals_dir == (tmp_path / "goals").resolve()
-    assert config.personas_dir == (tmp_path / "council").resolve()
-    assert config.goals_manifest_path == (tmp_path / "goals_manifest.json").resolve()
+    assert config.goals_dir == data_dir / "goals"
+    assert config.personas_dir == data_dir / "council"
+    assert config.goals_manifest_path == data_dir / "goals_manifest.json"
+    assert config.corpus_dir == data_dir / "corpus"
+    assert config.council_dir == data_dir / "council"
+    assert config.chunks_dir == data_dir / "chunks"
+    assert config.embeddings_dir == data_dir / "embeddings"
+    assert config.users_dir == data_dir / "users"
