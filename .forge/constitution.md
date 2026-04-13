@@ -7,6 +7,7 @@
 3. **General-purpose by design.** No feature, data structure, or assumption should be specific to any one deployment (including FTA). Everything deployment-specific lives in configuration and corpus files, not in code.
 4. **Voice and accuracy are non-negotiable.** In conversation mode, responses must be grounded in the corpus. Fabricated or unsupported claims are a failure. In collection mode, the interview must follow the governing persona's plan faithfully.
 5. **Two interfaces, one core.** The API and CLI are both first-class interfaces. All capabilities available via the API must be accessible via the CLI. Neither is a second-class citizen.
+6. **One deployer-controlled data directory.** A single `data_dir` is the sole root for all deployment data — corpus content, council personas, goals, processed chunks, embeddings, and user conversations. All platform data lives under conventional subdirectory names within `data_dir`; the deployer owns the entire tree. No code path reads or writes deployment data outside `data_dir`. The deployer is responsible for filesystem-level access controls on `data_dir`.
 
 ## Quality Bar
 
@@ -22,12 +23,15 @@
 - The platform must be deployable with no external services beyond an LLM provider and a vector embedding store.
 - All LLM calls must use markdown prompt templates — no inline prompt strings in Python source.
 - Python throughout. No polyglot backend.
+- No configurable path keys beyond `data_dir`. The subdirectory layout under `data_dir` is fixed by convention: `corpus/`, `council/`, `goals/`, `chunks/`, `embeddings/`, `users/`, and `goals_manifest.json` at the root. Per-subdirectory path overrides are prohibited.
 
 ## Out of Scope — Forever
 
 - Bundling or hard-wiring any single deployment's corpus or council (FTA or otherwise) into the core platform.
 - User authentication, authorization, or session management — the calling platform owns this.
 - Training or fine-tuning models — Corpus Council works with pre-trained LLMs via API only.
+- Owning, relocating, or migrating deployer data outside the `data_dir` tree.
+- Per-subdirectory path overrides — the conventional layout is fixed; deployers set `data_dir` and corpus-council finds everything by convention.
 
 ## Review Standards
 
