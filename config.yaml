@@ -8,6 +8,14 @@ embedding:
   provider: sentence-transformers
   model: all-MiniLM-L6-v2
 
+# All platform data lives under data_dir in conventional subdirectories:
+#   corpus/       — raw corpus documents (.md, .txt)
+#   council/      — council persona markdown files
+#   goals/        — goal markdown files
+#   chunks/       — processed corpus chunk JSON files (written by 'ingest')
+#   embeddings/   — ChromaDB vector store (written by 'embed')
+#   users/        — user conversation data
+#   goals_manifest.json — goals manifest (written by 'goals process')
 data_dir: data
 
 chunking:
