@@ -13,13 +13,15 @@ uv sync
 # Set your LLM API key
 export ANTHROPIC_API_KEY=your_key_here
 
-# Add corpus documents (.md or .txt) to corpus/
-# Add council persona files to council/
-# Add goal files to goals/
-# Edit config.yaml to configure providers, models, and paths
+# Create data_dir and conventional subdirectories
+mkdir -p data/corpus data/council data/goals
+# Add corpus documents (.md or .txt) to data/corpus/
+# Add council persona files to data/council/
+# Add goal files to data/goals/
+# Edit config.yaml to set data_dir and other options
 
 # Ingest and embed the corpus
-uv run corpus-council ingest corpus/
+uv run corpus-council ingest data/corpus/
 uv run corpus-council embed
 
 # Process goal files into the manifest
@@ -67,7 +69,7 @@ A **goal** is a markdown file that declares a desired outcome, a council composi
 desired_outcome: "Human-readable description of what this goal is trying to accomplish."
 corpus_path: "corpus"
 council:
-  - persona_file: "coach.md"     # relative to personas_dir
+  - persona_file: "coach.md"     # relative to data_dir/council/
     authority_tier: 1             # 1 = highest authority
   - persona_file: "analyst.md"
     authority_tier: 2
@@ -132,9 +134,9 @@ Priority order: per-request flag/field → `config.yaml` → `parallel` default.
 
 ## Workflow
 
-**1. Define your corpus** — place `.md` or `.txt` knowledge files in `corpus/`. These are the documents the council draws from when answering.
+**1. Define your corpus** — place `.md` or `.txt` knowledge files in `data_dir/corpus/`. These are the documents the council draws from when answering.
 
-**2. Define your council** — add persona markdown files to `council/`. Each file has YAML front matter:
+**2. Define your council** — add persona markdown files to `data_dir/council/`. Each file has YAML front matter:
 
 ```yaml
 ---
@@ -150,15 +152,29 @@ Additional context passed to this persona's prompts.
 
 Lower `position` = higher authority. Position 1 always has final say.
 
-**3. Define your goals** — add goal markdown files to `goals/`. Each goal declares a `desired_outcome`, a `council` list (persona files + authority tiers), and a `corpus_path`. See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md).
+**3. Define your goals** — add goal markdown files to `data_dir/goals/`. Each goal declares a `desired_outcome`, a `council` list (persona files + authority tiers), and a `corpus_path`. See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md).
 
-**4. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, directory paths, and `deliberation_mode`. API keys are always set via environment variables, never in config. Prompt templates are bundled with the package and are not user-configurable. Three additional keys control the goals system:
+**4. Configure** — edit `config.yaml` to set LLM provider/model, embedding model, `data_dir`, and `deliberation_mode`. API keys are always set via environment variables, never in config. Prompt templates are bundled with the package and are not user-configurable.
 
-| Key | Default | Description |
-|-----|---------|-------------|
-| `goals_dir` | `goals` | Directory containing goal `.md` files |
-| `personas_dir` | `council` | Directory containing persona `.md` files |
-| `goals_manifest_path` | `goals_manifest.json` | Path where the processed manifest is written |
+All content and generated artifacts live under a single `data_dir`. Set it in `config.yaml`:
+
+```yaml
+data_dir: data  # all subdirectories below are resolved relative to this path
+```
+
+The conventional subdirectory layout under `data_dir`:
+
+| Subdirectory | Purpose |
+|---|---|
+| `corpus/` | Raw corpus documents (.md, .txt) |
+| `council/` | Council persona markdown files |
+| `goals/` | Goal markdown files |
+| `chunks/` | Processed corpus chunk JSON files (written by `ingest`) |
+| `embeddings/` | ChromaDB vector store (written by `embed`) |
+| `users/` | User conversation data |
+| `goals_manifest.json` | Goals manifest (written by `goals process`) |
+
+> **Migration note:** If upgrading from a version that used `corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, or `goals_manifest_path` in `config.yaml`: remove those keys. corpus-council will raise a clear error if they are present. Move your content directories under `data_dir/` using the conventional names above.
 
 **5. Ingest, embed, and process** — run `ingest` then `embed` to chunk documents and build the vector index. Run `goals process` to register goal files into `goals_manifest.json`.
 
