@@ -30,7 +30,6 @@ def test_load_config_returns_all_required_fields() -> None:
     assert isinstance(config.data_dir, Path)
     assert isinstance(config.corpus_dir, Path)
     assert isinstance(config.council_dir, Path)
-    assert isinstance(config.plans_dir, Path)
     assert isinstance(config.chunk_max_size, int)
     assert isinstance(config.retrieval_top_k, int)
     assert config.chroma_collection

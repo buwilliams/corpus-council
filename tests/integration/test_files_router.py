@@ -18,13 +18,11 @@ from corpus_council.core.store import FileStore
 
 @pytest.fixture
 def managed_roots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
-    """Create five tmp subdirectories and patch _get_roots to point at them."""
+    """Create three tmp subdirectories and patch _get_roots to point at them."""
     roots: dict[str, Path] = {
         "corpus": tmp_path / "corpus",
         "council": tmp_path / "council",
-        "plans": tmp_path / "plans",
         "goals": tmp_path / "goals",
-        "templates": tmp_path / "templates",
     }
     for d in roots.values():
         d.mkdir(parents=True, exist_ok=True)
@@ -62,7 +60,7 @@ async def test_list_roots(
     response = await client.get("/files")
     assert response.status_code == 200
     data = response.json()
-    assert set(data["roots"]) == {"corpus", "council", "plans", "goals", "templates"}
+    assert set(data["roots"]) == {"corpus", "council", "goals"}
 
 
 async def test_list_directory(

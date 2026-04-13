@@ -108,32 +108,6 @@ def council_dir(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def plans_dir(tmp_path: Path) -> Path:
-    """Write a signup collection plan to tmp_path/plans."""
-    d = tmp_path / "plans"
-    d.mkdir(parents=True, exist_ok=True)
-
-    (d / "signup.md").write_text(
-        "---\n"
-        "title: User Signup\n"
-        "fields:\n"
-        "  - name: first_name\n"
-        "    description: The user's first name\n"
-        "    required: true\n"
-        "    validation_rule: Must be a non-empty alphabetic string\n"
-        "  - name: email\n"
-        "    description: The user's email address\n"
-        "    required: true\n"
-        "    validation_rule: Must be a valid email format\n"
-        "---\n"
-        "Collect user signup information.\n",
-        encoding="utf-8",
-    )
-
-    return d
-
-
-@pytest.fixture
 def data_dir(tmp_path: Path) -> Path:
     """Create and return tmp_path/data."""
     d = tmp_path / "data"
@@ -172,7 +146,6 @@ def test_config(
     tmp_path: Path,
     corpus_dir: Path,
     council_dir: Path,
-    plans_dir: Path,
     data_dir: Path,
     goals_dir: Path,
 ) -> AppConfig:
@@ -185,7 +158,6 @@ def test_config(
         data_dir=data_dir,
         corpus_dir=corpus_dir,
         council_dir=council_dir,
-        plans_dir=plans_dir,
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",

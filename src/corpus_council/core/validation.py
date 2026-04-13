@@ -3,8 +3,6 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from corpus_council.core.config import AppConfig
-
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9_-]{4,128}$")
 
 
@@ -25,13 +23,4 @@ def validate_path_containment(candidate: Path, parent: Path, label: str) -> Path
     return resolved
 
 
-def validate_plan_id(plan_id: str, config: AppConfig) -> Path:
-    validate_id(plan_id, "plan_id")
-    plan_path = config.plans_dir / f"{plan_id}.md"
-    resolved = validate_path_containment(plan_path, config.plans_dir, "plan_id")
-    if not resolved.exists():
-        raise FileNotFoundError(f"Plan not found: {plan_id}")
-    return resolved
-
-
-__all__ = ["validate_id", "validate_path_containment", "validate_plan_id"]
+__all__ = ["validate_id", "validate_path_containment"]

@@ -58,7 +58,7 @@ def test_load_council_raises_on_missing_required_field(
         corpus_dir=test_config.corpus_dir,
         council_dir=bad_dir,
 
-        plans_dir=test_config.plans_dir,
+
         chunk_max_size=test_config.chunk_max_size,
         retrieval_top_k=test_config.retrieval_top_k,
         chroma_collection=test_config.chroma_collection,
@@ -93,7 +93,7 @@ def test_load_council_raises_on_invalid_position(
         corpus_dir=test_config.corpus_dir,
         council_dir=bad_dir,
 
-        plans_dir=test_config.plans_dir,
+
         chunk_max_size=test_config.chunk_max_size,
         retrieval_top_k=test_config.retrieval_top_k,
         chroma_collection=test_config.chroma_collection,

@@ -22,7 +22,6 @@ def _make_config() -> Any:
         data_dir=Path("/tmp/test/data"),
         corpus_dir=Path("/tmp/test/corpus"),
         council_dir=Path("/tmp/test/council"),
-        plans_dir=Path("/tmp/test/plans"),
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",

@@ -60,7 +60,6 @@ def _write_config(tmp_path: Path) -> Path:
         "goals_dir": str(tmp_path / "goals"),
         "personas_dir": str(tmp_path / "council"),
         "goals_manifest_path": str(tmp_path / "goals_manifest.json"),
-        "plans_dir": str(tmp_path / "plans"),
         "chunking": {"max_size": 512},
         "retrieval": {"top_k": 3},
         "chroma_collection": "test_corpus",
