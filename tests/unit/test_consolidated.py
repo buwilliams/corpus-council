@@ -156,7 +156,7 @@ def test_run_consolidated_deliberation_makes_exactly_two_calls(
         self: LLMClient,
         template_name: str,
         context: dict[str, Any],
-        **kwargs: Any,
+        system_prompt: str | None = None,
     ) -> str:
         calls.append((template_name, context))
         if template_name == "council_consolidated":
@@ -176,6 +176,8 @@ def test_run_consolidated_deliberation_makes_exactly_two_calls(
         corpus_chunks=[],
         members=members,
         llm=llm,
+        goal_name="test-goal",
+        goal_description="A test goal description",
     )
 
     assert len(calls) == 2
@@ -197,7 +199,7 @@ def test_run_consolidated_deliberation_returns_deliberation_result(
         self: LLMClient,
         template_name: str,
         context: dict[str, Any],
-        **kwargs: Any,
+        system_prompt: str | None = None,
     ) -> str:
         if template_name == "council_consolidated":
             return council_output
@@ -216,6 +218,8 @@ def test_run_consolidated_deliberation_returns_deliberation_result(
         corpus_chunks=[],
         members=members,
         llm=llm,
+        goal_name="test-goal",
+        goal_description="A test goal description",
     )
 
     assert isinstance(result, DeliberationResult)
@@ -241,7 +245,7 @@ def test_run_consolidated_deliberation_extracts_escalation(
         self: LLMClient,
         template_name: str,
         context: dict[str, Any],
-        **kwargs: Any,
+        system_prompt: str | None = None,
     ) -> str:
         if template_name == "council_consolidated":
             return council_output
@@ -261,6 +265,8 @@ def test_run_consolidated_deliberation_extracts_escalation(
         corpus_chunks=[],
         members=members,
         llm=llm,
+        goal_name="test-goal",
+        goal_description="A test goal description",
     )
 
     assert result.escalation_triggered is True
@@ -270,3 +276,47 @@ def test_run_consolidated_deliberation_extracts_escalation(
     ctx = evaluator_contexts[0]
     assert "out of scope" in ctx.get("council_responses", "")
     assert "out of scope" in ctx.get("escalation_summary", "")
+
+
+def test_run_consolidated_deliberation_evaluator_receives_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Evaluator call (evaluator_consolidated) must receive a non-None, non-empty system_prompt."""
+    config = _make_config()
+    llm = LLMClient(config)
+    members = _make_members()
+
+    council_output = _make_normal_council_output(members)
+    captured_system_prompts: dict[str, str | None] = {}
+
+    def fake_call(
+        self: LLMClient,
+        template_name: str,
+        context: dict[str, Any],
+        system_prompt: str | None = None,
+    ) -> str:
+        captured_system_prompts[template_name] = system_prompt
+        if template_name == "council_consolidated":
+            return council_output
+        return "Final synthesized answer."
+
+    def fake_render_template(
+        self: LLMClient, template_name: str, context: dict[str, Any]
+    ) -> str:
+        return f"System prompt for {template_name}"
+
+    monkeypatch.setattr(LLMClient, "call", fake_call)
+    monkeypatch.setattr(LLMClient, "render_template", fake_render_template)
+
+    run_consolidated_deliberation(
+        user_message="What is AI?",
+        corpus_chunks=[],
+        members=members,
+        llm=llm,
+        goal_name="test-goal",
+        goal_description="A test goal description",
+    )
+
+    evaluator_sp = captured_system_prompts.get("evaluator_consolidated")
+    assert evaluator_sp is not None, "evaluator_consolidated must receive a system_prompt"
+    assert evaluator_sp != "", "evaluator_consolidated system_prompt must be non-empty"

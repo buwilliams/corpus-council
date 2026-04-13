@@ -9,6 +9,7 @@ from corpus_council.core.deliberation import (
     DeliberationResult,
     MemberLog,
     _format_chunks,
+    _format_member_responses,
     run_deliberation,
 )
 from corpus_council.core.llm import LLMClient
@@ -422,3 +423,41 @@ def test_goal_description_in_system_prompt() -> None:
         sp = call["system_prompt"]
         assert sp is not None
         assert "test goal description" in sp
+
+
+# ---------------------------------------------------------------------------
+# _format_member_responses
+# ---------------------------------------------------------------------------
+
+
+def test_format_member_responses_uses_anonymous_headers() -> None:
+    """_format_member_responses output must not contain member names, but must use
+    'Perspective N:' headers and preserve response content."""
+    log = [
+        MemberLog(
+            member_name="Domain Analyst",
+            position=2,
+            response="Some domain analysis here.",
+            escalation_triggered=False,
+        ),
+        MemberLog(
+            member_name="Adversarial Critic",
+            position=3,
+            response="A critical counterpoint.",
+            escalation_triggered=False,
+        ),
+    ]
+
+    result = _format_member_responses(log)
+
+    # Member names must NOT appear
+    assert "Domain Analyst" not in result
+    assert "Adversarial Critic" not in result
+
+    # Anonymous perspective headers must appear
+    assert "Perspective 1:" in result
+    assert "Perspective 2:" in result
+
+    # Response content must be preserved
+    assert "Some domain analysis here." in result
+    assert "A critical counterpoint." in result
