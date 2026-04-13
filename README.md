@@ -95,6 +95,18 @@ Two goal files ship with the project:
 
 See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md) for the full authoring reference.
 
+## How It Works
+
+1. A user message is received by the `/query` endpoint.
+2. The raw user message is encoded into a vector using `sentence-transformers/all-MiniLM-L6-v2`.
+3. ChromaDB is queried for the top-K corpus chunks closest to that vector by cosine similarity (default: 5).
+4. The retrieved chunks are formatted with source attribution and injected into every LLM prompt — no LLM decides what to retrieve.
+5. The active goal's council members deliberate using the user message and the retrieved chunks as shared context.
+6. In **sequential** mode each member responds in turn, seeing the chunks and all prior members' responses; the position-1 member synthesizes the final answer.
+7. In **consolidated** mode all members respond in a single LLM call, then a second call produces the synthesized final answer.
+8. If any member triggers its escalation rule, deliberation stops and the position-1 member resolves the concern directly.
+9. The final synthesized response is returned to the caller and the turn is appended to the conversation history.
+
 ## Deliberation Modes
 
 The council supports two deliberation modes, selectable per request or as a default in `config.yaml`.
