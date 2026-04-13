@@ -27,25 +27,42 @@ class LLMClient:
         template = env.get_template(template_name)
         return template.render(**context)
 
-    def call(self, template_name: str, context: dict[str, Any]) -> str:
+    def call(
+        self,
+        template_name: str,
+        context: dict[str, Any],
+        system_prompt: str | None = None,
+    ) -> str:
         rendered_prompt = self.render_template(template_name, context)
         provider = self._config.llm_provider
         if provider == "anthropic":
-            return self._call_anthropic(rendered_prompt)
+            return self._call_anthropic(rendered_prompt, system_prompt=system_prompt)
         raise ValueError(f"Unknown LLM provider: {provider}")
 
-    def _call_anthropic(self, rendered_prompt: str) -> str:
+    def _call_anthropic(
+        self,
+        rendered_prompt: str,
+        system_prompt: str | None = None,
+    ) -> str:
         import anthropic as anthropic_sdk
 
         key = os.environ.get("ANTHROPIC_API_KEY")
         if not key:
             raise RuntimeError("ANTHROPIC_API_KEY environment variable is not set")
         client = anthropic_sdk.Anthropic(api_key=key)
-        response = client.messages.create(
-            model=self._config.llm_model,
-            max_tokens=2048,
-            messages=[{"role": "user", "content": rendered_prompt}],
-        )
+        if system_prompt is not None:
+            response = client.messages.create(
+                model=self._config.llm_model,
+                max_tokens=2048,
+                system=system_prompt,
+                messages=[{"role": "user", "content": rendered_prompt}],
+            )
+        else:
+            response = client.messages.create(
+                model=self._config.llm_model,
+                max_tokens=2048,
+                messages=[{"role": "user", "content": rendered_prompt}],
+            )
         block = response.content[0]
         if not isinstance(block, anthropic_sdk.types.TextBlock):
             raise RuntimeError(f"Unexpected response content block type: {type(block)}")
