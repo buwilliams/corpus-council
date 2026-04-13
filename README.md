@@ -34,11 +34,14 @@ uv run corpus-council serve
 ## Usage
 
 ```bash
-# Single-turn query using a named goal
-uv run corpus-council query --goal intake "Tell me about yourself."
+# Start an interactive chat session with a named goal
+uv run corpus-council chat <user-id> --goal intake
 
-# Single-turn query with explicit deliberation mode
-uv run corpus-council query --goal intake "Tell me about yourself." --mode consolidated
+# Resume an existing conversation
+uv run corpus-council chat <user-id> --goal intake --session <conversation-id>
+
+# Override deliberation mode for the session
+uv run corpus-council chat <user-id> --goal intake --mode consolidated
 
 # Process goal files and write goals_manifest.json
 uv run corpus-council goals process
@@ -49,14 +52,8 @@ uv run corpus-council ingest /path/to/corpus/
 # Generate embeddings
 uv run corpus-council embed
 
-# Start the API server (default: 127.0.0.1:8000)
+# Start the API server (default: 0.0.0.0:8000)
 uv run corpus-council serve --host 0.0.0.0 --port 8000
-
-# Interactive chat session (not goal-aware; uses default council)
-uv run corpus-council chat <user-id>
-
-# Structured data-collection session (not goal-aware)
-uv run corpus-council collect <user-id> --plan <plan-id>
 ```
 
 ## Goals
@@ -82,7 +79,7 @@ Optional body text with additional context for the council.
 
 1. Author a goal file in `goals/`
 2. Run `corpus-council goals process` to validate and register it
-3. Use it at runtime: `corpus-council query --goal <name> "<message>"`
+3. Use it at runtime: `corpus-council chat <user-id> --goal <name>`
 
 Two goal files ship with the project:
 
@@ -97,14 +94,14 @@ See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md) for the full 
 
 ## How It Works
 
-1. A user message is received by the `/query` endpoint.
+1. A user message is received by the `/chat` endpoint.
 2. The raw user message is encoded into a vector using `sentence-transformers/all-MiniLM-L6-v2`.
 3. ChromaDB is queried for the top-K corpus chunks closest to that vector by cosine similarity (default: 5).
 4. The retrieved chunks are formatted with source attribution and injected into every LLM prompt — no LLM decides what to retrieve.
 5. The active goal's council members deliberate using the user message and the retrieved chunks as shared context.
 6. In **parallel** mode all non-position-1 members respond concurrently with no visibility into each other's responses; the position-1 member synthesizes all independent responses into the final answer.
 7. In **consolidated** mode all members respond in a single LLM call, then a second call produces the synthesized final answer.
-8. If any member triggers its escalation rule, deliberation stops and the position-1 member resolves the concern directly.
+8. If any member triggers its escalation rule, all members still complete; escalation flags are collected post-flight and the position-1 member resolves the concern during synthesis.
 9. The final synthesized response is returned to the caller and the turn is appended to the conversation history.
 
 ## Deliberation Modes
@@ -123,12 +120,12 @@ deliberation_mode: parallel  # or: consolidated
 
 **Override per request via CLI:**
 ```bash
-uv run corpus-council query --goal intake "Your question" --mode consolidated
+uv run corpus-council chat <user-id> --goal intake --mode consolidated
 ```
 
 **Override per request via API:**
 ```json
-{ "message": "Your question", "goal": "intake", "mode": "consolidated" }
+{ "goal": "intake", "user_id": "user0001", "message": "Your question", "mode": "consolidated" }
 ```
 
 Priority order: per-request flag/field → `config.yaml` → `parallel` default.
@@ -165,30 +162,35 @@ Lower `position` = higher authority. Position 1 always has final say.
 
 **5. Ingest, embed, and process** — run `ingest` then `embed` to chunk documents and build the vector index. Run `goals process` to register goal files into `goals_manifest.json`.
 
-**6. Query** — use `corpus-council query --goal <name> "<message>"` for single-turn queries. The full API is also available at `http://localhost:8000/docs` after `corpus-council serve`.
+**6. Query** — use `corpus-council chat <user-id> --goal <name>` for interactive sessions. The full API is also available at `http://localhost:8000/docs` after `corpus-council serve`.
 
 ## API Endpoints
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/query` | Single query turn — requires `goal`, `message`; optional `mode` |
+| POST | `/chat` | Goal-aware chat turn — requires `goal`, `user_id`, `message`; optional `conversation_id`, `mode` |
 | POST | `/corpus/ingest` | Ingest corpus documents |
 | POST | `/corpus/embed` | Embed ingested chunks into ChromaDB |
 
-**`POST /query` request body:**
+**`POST /chat` request body:**
 ```json
 {
-  "message": "Your question here",
   "goal": "intake",
+  "user_id": "user0001",
+  "message": "Your question here",
+  "conversation_id": "optional-uuid-to-continue-a-prior-turn",
   "mode": "parallel"
 }
 ```
 
 - `goal` (required) — name of a registered goal from `goals_manifest.json`
+- `user_id` (required) — caller-supplied identifier (minimum 4 characters)
 - `message` (required) — the user's input
+- `conversation_id` (optional) — omit to start a new conversation; supply to continue an existing one
 - `mode` (optional) — `"parallel"` or `"consolidated"`; omit to use `config.yaml` default
 
 **Responses:**
-- `200` — `{ "response": "...", "goal": "intake" }`
+- `200` — `{ "response": "...", "goal": "intake", "conversation_id": "uuid" }`
+- `400` — invalid `conversation_id` (e.g. path traversal attempt)
 - `404` — goal name not found in manifest
 - `422` — invalid `mode` value or missing required field
