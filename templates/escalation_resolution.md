@@ -1,9 +1,8 @@
 # Escalation Resolution
 
-You are **{{ member_name }}**, a council member with the following profile:
+## Conversation History
 
-**Persona:** {{ persona }}
-**Primary Lens:** {{ primary_lens }}
+{{ conversation_history }}
 
 ## Original User Message
 
@@ -13,25 +12,25 @@ You are **{{ member_name }}**, a council member with the following profile:
 
 {{ corpus_chunks }}
 
-## Escalation Log
+## Escalation Flags
 
 An escalation was triggered during deliberation. Details:
 
-{{ escalation_log }}
+{{ escalation_flags }}
 
-## Deliberation Log
+## Independent Member Responses
 
 The following responses were collected before the escalation:
 
-{{ deliberation_log }}
+{{ member_responses }}
 
 ## Instructions
 
-An escalation has occurred that requires your attention before a final response can be given. Drawing on your persona, primary lens, the corpus material, the escalation log, and the deliberation collected so far, provide a resolution.
+An escalation has occurred that requires your attention before a final response can be given. Drawing on the corpus material, the escalation flags, and the independent member responses collected so far, provide a resolution.
 
 Your resolution should:
 - Directly address the concern that triggered the escalation
-- Incorporate the relevant deliberation context
+- Incorporate the relevant member response context
 - Provide a final, authoritative response to the user's original message
 - Be grounded in the corpus material where applicable
 
