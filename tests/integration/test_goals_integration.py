@@ -44,7 +44,11 @@ def _write_persona_files(council_dir: Path) -> None:
 
 
 def _write_config(tmp_path: Path) -> Path:
-    """Write a config.yaml to tmp_path and return its path."""
+    """Write a config.yaml to tmp_path and return its path.
+
+    data_dir is set to tmp_path so derived paths (corpus, council, goals, etc.)
+    resolve to the directories created by the fixture.
+    """
     config_data = {
         "llm": {
             "provider": "anthropic",
@@ -54,12 +58,7 @@ def _write_config(tmp_path: Path) -> Path:
             "provider": "sentence-transformers",
             "model": "all-MiniLM-L6-v2",
         },
-        "data_dir": str(tmp_path / "data"),
-        "corpus_dir": str(tmp_path / "corpus"),
-        "council_dir": str(tmp_path / "council"),
-        "goals_dir": str(tmp_path / "goals"),
-        "personas_dir": str(tmp_path / "council"),
-        "goals_manifest_path": str(tmp_path / "goals_manifest.json"),
+        "data_dir": str(tmp_path),
         "chunking": {"max_size": 512},
         "retrieval": {"top_k": 3},
         "chroma_collection": "test_corpus",

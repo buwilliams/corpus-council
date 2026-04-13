@@ -17,8 +17,6 @@ def _make_config() -> AppConfig:
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
         data_dir=Path("/tmp/test/data"),
-        corpus_dir=Path("/tmp/test/corpus"),
-        council_dir=Path("/tmp/test/council"),
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",

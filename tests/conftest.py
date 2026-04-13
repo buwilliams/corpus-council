@@ -146,24 +146,23 @@ def test_config(
     tmp_path: Path,
     corpus_dir: Path,
     council_dir: Path,
-    data_dir: Path,
     goals_dir: Path,
 ) -> AppConfig:
-    """Return an AppConfig with all paths pointing at tmp_path-based directories."""
+    """Return an AppConfig with all paths pointing at tmp_path-based directories.
+
+    data_dir is set to tmp_path so that derived properties align with the
+    corpus_dir (tmp_path/corpus), council_dir (tmp_path/council), and
+    goals_dir (tmp_path/goals) fixtures.
+    """
     return AppConfig(
         llm_provider="anthropic",
         llm_model="claude-haiku-4-5-20251001",
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
-        data_dir=data_dir,
-        corpus_dir=corpus_dir,
-        council_dir=council_dir,
+        data_dir=tmp_path,
         chunk_max_size=512,
         retrieval_top_k=3,
         chroma_collection="test_corpus",
-        goals_dir=goals_dir,
-        personas_dir=council_dir,
-        goals_manifest_path=tmp_path / "goals_manifest.json",
     )
 
 

@@ -13,11 +13,10 @@ from corpus_council.core.corpus import ingest_corpus
 
 def _make_config(tmp_path: Path, chunk_max_size: int = 512) -> AppConfig:
     """Build an AppConfig entirely from tmp_path-based directories."""
-    corpus_dir = tmp_path / "corpus"
-    corpus_dir.mkdir(parents=True, exist_ok=True)
-
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
+    # corpus_dir is a derived property (data_dir/corpus); pre-create it
+    (data_dir / "corpus").mkdir(parents=True, exist_ok=True)
 
     return AppConfig(
         llm_provider="anthropic",
@@ -25,8 +24,6 @@ def _make_config(tmp_path: Path, chunk_max_size: int = 512) -> AppConfig:
         embedding_provider="sentence-transformers",
         embedding_model="all-MiniLM-L6-v2",
         data_dir=data_dir,
-        corpus_dir=corpus_dir,
-        council_dir=tmp_path / "council",
         chunk_max_size=chunk_max_size,
         retrieval_top_k=5,
         chroma_collection="test_corpus",

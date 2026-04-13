@@ -35,9 +35,11 @@ def test_load_council_parses_all_fields(test_config: AppConfig) -> None:
 def test_load_council_raises_on_missing_required_field(
     tmp_path: Path, test_config: AppConfig
 ) -> None:
-    bad_dir = tmp_path / "council_bad"
-    bad_dir.mkdir()
-    (bad_dir / "bad_member.md").write_text(
+    # council_dir is a property: data_dir / "council"; use a fresh data_dir
+    bad_data_dir = tmp_path / "bad_missing"
+    bad_council_dir = bad_data_dir / "council"
+    bad_council_dir.mkdir(parents=True)
+    (bad_council_dir / "bad_member.md").write_text(
         "---\n"
         "name: Missing Fields Member\n"
         "persona: A persona\n"
@@ -54,11 +56,7 @@ def test_load_council_raises_on_missing_required_field(
         llm_model=test_config.llm_model,
         embedding_provider=test_config.embedding_provider,
         embedding_model=test_config.embedding_model,
-        data_dir=test_config.data_dir,
-        corpus_dir=test_config.corpus_dir,
-        council_dir=bad_dir,
-
-
+        data_dir=bad_data_dir,
         chunk_max_size=test_config.chunk_max_size,
         retrieval_top_k=test_config.retrieval_top_k,
         chroma_collection=test_config.chroma_collection,
@@ -70,9 +68,11 @@ def test_load_council_raises_on_missing_required_field(
 def test_load_council_raises_on_invalid_position(
     tmp_path: Path, test_config: AppConfig
 ) -> None:
-    bad_dir = tmp_path / "council_invalid_pos"
-    bad_dir.mkdir()
-    (bad_dir / "invalid_pos.md").write_text(
+    # council_dir is a property: data_dir / "council"; use a fresh data_dir
+    bad_data_dir = tmp_path / "bad_invalid_pos"
+    bad_council_dir = bad_data_dir / "council"
+    bad_council_dir.mkdir(parents=True)
+    (bad_council_dir / "invalid_pos.md").write_text(
         "---\n"
         "name: Bad Position Member\n"
         "persona: A persona\n"
@@ -89,11 +89,7 @@ def test_load_council_raises_on_invalid_position(
         llm_model=test_config.llm_model,
         embedding_provider=test_config.embedding_provider,
         embedding_model=test_config.embedding_model,
-        data_dir=test_config.data_dir,
-        corpus_dir=test_config.corpus_dir,
-        council_dir=bad_dir,
-
-
+        data_dir=bad_data_dir,
         chunk_max_size=test_config.chunk_max_size,
         retrieval_top_k=test_config.retrieval_top_k,
         chroma_collection=test_config.chroma_collection,
