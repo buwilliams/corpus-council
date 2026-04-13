@@ -12,19 +12,17 @@
 
 {{ corpus_chunks }}
 
-## Independent Member Responses
-
-The following are the independent responses from all council members during deliberation:
+## Internal Analysis
 
 {{ member_responses }}
 
 ## Instructions
 
-You have the final word. Drawing on the corpus material and the independent member responses above, synthesize a final response to the user's message.
+You have the final word. Drawing on the corpus material and the internal analysis above, provide your response to the user's message.
 
-Your synthesis should:
-- Integrate the strongest insights from the member responses
-- Resolve any disagreements or tensions between council members
+Your response should:
+- Draw on the strongest insights from the internal analysis above
+- Speak in your own voice drawing on the internal analysis above
 - Provide a clear, authoritative, and well-grounded answer to the user
 - Reflect your own perspective and primary lens
 

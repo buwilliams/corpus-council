@@ -14,23 +14,21 @@
 
 ## Escalation Flags
 
-An escalation was triggered during deliberation. Details:
+A critical concern was identified that requires direct attention before responding:
 
 {{ escalation_flags }}
 
-## Independent Member Responses
-
-The following responses were collected before the escalation:
+## Internal Analysis
 
 {{ member_responses }}
 
 ## Instructions
 
-An escalation has occurred that requires your attention before a final response can be given. Drawing on the corpus material, the escalation flags, and the independent member responses collected so far, provide a resolution.
+A critical concern requires your direct attention before responding. Drawing on the corpus material, the concern details, and the internal analysis above, provide your response.
 
-Your resolution should:
+Your response should:
 - Directly address the concern that triggered the escalation
-- Incorporate the relevant member response context
+- Draw on the internal analysis above where relevant
 - Provide a final, authoritative response to the user's original message
 - Be grounded in the corpus material where applicable
 

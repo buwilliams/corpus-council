@@ -10,6 +10,4 @@
 ## Instructions
 Based on your identity and mission (provided in your system context), give your independent analysis of the current query. Draw on the corpus material and conversation history above. Do not speculate beyond what the corpus supports.
 
-Your response will be synthesized with other council members' independent responses by the position-1 authority member.
-
 Respond now:
