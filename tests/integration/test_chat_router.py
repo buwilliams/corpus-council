@@ -167,3 +167,28 @@ async def test_post_chat_invalid_conversation_id_returns_400(
         },
     )
     assert response.status_code == 400
+
+
+async def test_post_chat_parallel_mode_returns_non_empty_response(
+    client: httpx.AsyncClient,
+) -> None:
+    """POST /chat with mode: parallel returns HTTP 200 and non-empty response."""
+    response = await client.post(
+        "/chat",
+        json={"goal": "test-goal", "user_id": "user0003", "message": "hello", "mode": "parallel"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert "response" in body
+    assert body["response"] != ""
+
+
+async def test_post_chat_sequential_mode_returns_422(
+    client: httpx.AsyncClient,
+) -> None:
+    """POST /chat with mode: sequential returns HTTP 422 (invalid enum value)."""
+    response = await client.post(
+        "/chat",
+        json={"goal": "test-goal", "user_id": "user0003", "message": "hello", "mode": "sequential"},
+    )
+    assert response.status_code == 422
