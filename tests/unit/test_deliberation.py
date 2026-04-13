@@ -27,19 +27,33 @@ class TestLLMClient(LLMClient):
         super().__init__(config)
         self.trigger_escalation_for = trigger_escalation_for
         self.calls: list[tuple[str, dict]] = []  # type: ignore[type-arg]
-        self._last_deliberating_member: str = ""
 
-    def call(self, template_name: str, context: dict) -> str:  # type: ignore[type-arg]
+    def call(  # type: ignore[override]
+        self,
+        template_name: str,
+        context: dict,  # type: ignore[type-arg]
+        system_prompt: str | None = None,
+    ) -> str:
         self.render_template(template_name, context)  # REAL rendering
         self.calls.append((template_name, context))
-        if template_name == "member_deliberation":
-            self._last_deliberating_member = context.get("member_name", "")
         if template_name == "escalation_check":
-            member = self._last_deliberating_member
-            if self.trigger_escalation_for and member == self.trigger_escalation_for:
-                return "TRIGGERED: factual error detected"
+            if self.trigger_escalation_for:
+                # Identify member by escalation_rule (unique per member)
+                escalation_rule: str = context.get("escalation_rule", "")
+                member_name = self._member_name_for_rule(escalation_rule)
+                if member_name == self.trigger_escalation_for:
+                    return "TRIGGERED: factual error detected"
             return "NOT_TRIGGERED"
-        return f"Response from {context.get('member_name', template_name)}"
+        return f"Response from {template_name}"
+
+    def _member_name_for_rule(self, escalation_rule: str) -> str:
+        """Map escalation_rule text back to the member it belongs to."""
+        rule_to_name: dict[str, str] = {
+            "Halt if response contains factually false claims": "Adversarial Critic",
+            "Halt if response is out of scope": "Domain Analyst",
+            "Halt if response is incomplete": "Final Synthesizer",
+        }
+        return rule_to_name.get(escalation_rule, "")
 
 
 def _make_config(templates_dir: Path) -> AppConfig:
@@ -142,7 +156,7 @@ def test_deliberation_position_1_always_runs_last(tmp_path: Path) -> None:
     assert final_entry.member_name == "Final Synthesizer"
 
 
-def test_deliberation_escalation_triggered_skips_remaining_members(
+def test_deliberation_escalation_triggered_all_members_run(
     tmp_path: Path,
 ) -> None:
     tpl_dir = _copy_templates(tmp_path)
@@ -159,12 +173,12 @@ def test_deliberation_escalation_triggered_skips_remaining_members(
     )
 
     assert result.escalation_triggered is True
-    # position-1 must still appear in the log
+    # position-1 must still appear in the log (synthesis step)
     position_1_entries = [e for e in result.deliberation_log if e.position == 1]
     assert len(position_1_entries) == 1
-    # position-2 should NOT appear (skipped after escalation at position-3)
+    # In parallel mode all non-position-1 members run concurrently — position-2 also runs
     position_2_entries = [e for e in result.deliberation_log if e.position == 2]
-    assert len(position_2_entries) == 0
+    assert len(position_2_entries) == 1
 
 
 def test_deliberation_escalation_path_uses_resolution_template(

@@ -16,7 +16,7 @@ class ChatRequest(BaseModel):
     user_id: str
     conversation_id: str | None = None
     message: str
-    mode: str | None = None
+    mode: Literal["parallel", "consolidated"] | None = None
 
 
 class ChatResponse(BaseModel):

@@ -13,7 +13,12 @@ from corpus_council.core.store import FileStore
 class ChatTestLLM(LLMClient):
     __test__ = False  # prevent pytest from collecting as test suite
 
-    def call(self, template_name: str, context: dict[str, Any]) -> str:
+    def call(  # type: ignore[override]
+        self,
+        template_name: str,
+        context: dict[str, Any],
+        system_prompt: str | None = None,
+    ) -> str:
         self.render_template(template_name, context)  # real template rendering
         if template_name == "escalation_check":
             return "NOT_TRIGGERED"

@@ -66,7 +66,7 @@ def _write_config(tmp_path: Path) -> Path:
         "chunking": {"max_size": 512},
         "retrieval": {"top_k": 3},
         "chroma_collection": "test_corpus",
-        "deliberation_mode": "sequential",
+        "deliberation_mode": "parallel",
     }
     config_path = tmp_path / "config.yaml"
     config_path.write_text(yaml.dump(config_data), encoding="utf-8")

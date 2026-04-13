@@ -16,7 +16,12 @@ _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f
 class ChatTestLLM(LLMClient):
     __test__ = False
 
-    def call(self, template_name: str, context: dict) -> str:  # type: ignore[type-arg]
+    def call(  # type: ignore[override]
+        self,
+        template_name: str,
+        context: dict,  # type: ignore[type-arg]
+        system_prompt: str | None = None,
+    ) -> str:
         self.render_template(template_name, context)  # real rendering
         if template_name == "escalation_check":
             return "NOT_TRIGGERED"
