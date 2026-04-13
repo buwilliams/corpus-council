@@ -102,7 +102,7 @@ See [`docs/goal-authoring-guide.md`](docs/goal-authoring-guide.md) for the full 
 3. ChromaDB is queried for the top-K corpus chunks closest to that vector by cosine similarity (default: 5).
 4. The retrieved chunks are formatted with source attribution and injected into every LLM prompt — no LLM decides what to retrieve.
 5. The active goal's council members deliberate using the user message and the retrieved chunks as shared context.
-6. In **sequential** mode each member responds in turn, seeing the chunks and all prior members' responses; the position-1 member synthesizes the final answer.
+6. In **parallel** mode all non-position-1 members respond concurrently with no visibility into each other's responses; the position-1 member synthesizes all independent responses into the final answer.
 7. In **consolidated** mode all members respond in a single LLM call, then a second call produces the synthesized final answer.
 8. If any member triggers its escalation rule, deliberation stops and the position-1 member resolves the concern directly.
 9. The final synthesized response is returned to the caller and the turn is appended to the conversation history.
@@ -113,12 +113,12 @@ The council supports two deliberation modes, selectable per request or as a defa
 
 | Mode | LLM calls | Description |
 |------|-----------|-------------|
-| `sequential` (default) | 2N+1 (N = council size) | Each member deliberates in turn; a final synthesizer resolves the result. Slower but each member sees prior context. |
+| `parallel` (default) | N+1 (N = non-position-1 members) | Each member deliberates independently with no visibility into other members' responses; the position-1 member synthesizes all responses. Concurrent — wall-clock time ~2 serial LLM round-trips. |
 | `consolidated` | 2 | All members respond in a single call, then an evaluator synthesizes the final answer. Faster — sub-30s for a 6-member council. |
 
 **Set the default in `config.yaml`:**
 ```yaml
-deliberation_mode: sequential  # or: consolidated
+deliberation_mode: parallel  # or: consolidated
 ```
 
 **Override per request via CLI:**
@@ -131,7 +131,7 @@ uv run corpus-council query --goal intake "Your question" --mode consolidated
 { "message": "Your question", "goal": "intake", "mode": "consolidated" }
 ```
 
-Priority order: per-request flag/field → `config.yaml` → `sequential` default.
+Priority order: per-request flag/field → `config.yaml` → `parallel` default.
 
 ## Workflow
 
@@ -180,13 +180,13 @@ Lower `position` = higher authority. Position 1 always has final say.
 {
   "message": "Your question here",
   "goal": "intake",
-  "mode": "sequential"
+  "mode": "parallel"
 }
 ```
 
 - `goal` (required) — name of a registered goal from `goals_manifest.json`
 - `message` (required) — the user's input
-- `mode` (optional) — `"sequential"` or `"consolidated"`; omit to use `config.yaml` default
+- `mode` (optional) — `"parallel"` or `"consolidated"`; omit to use `config.yaml` default
 
 **Responses:**
 - `200` — `{ "response": "...", "goal": "intake" }`
