@@ -4,93 +4,41 @@
 
 ### Role
 
-Owns the `FileStore` path helpers for goal-keyed conversation storage, the sharding strategy for the new `users/{shard}/{user_id}/goals/{goal}/{conversation_id}/` layout, and ensures all file I/O in `run_goal_chat` and the `POST /chat` router is safe, atomic where appropriate, and consistent with existing `FileStore` patterns.
+Owns the flat-file store design, sharding strategy, `fcntl` locking, JSONL/JSON schemas, and ChromaDB integration; ensures data integrity is maintained across concurrent parallel deliberation calls hitting the store simultaneously.
 
 ### Guiding Principles
 
-- All user data writes must be consistent with the existing `FileStore` pattern. New path helpers follow the same sharding convention already used for other user data.
-- The new path layout is `users/{shard}/{user_id}/goals/{goal}/{conversation_id}/` — `goal` and `conversation_id` are both path components and must be validated before use.
-- `conversation_id` must never contain `..` segments. Validate before constructing any path. Raise `ValueError` (or equivalent) if invalid — callers map this to HTTP 400.
-- Turn persistence (JSONL append to `messages.jsonl`) must be atomic from the caller's perspective: append the full turn record as a single line, not two separate appends for user and assistant.
-- `goals_manifest.json` is the authoritative source for valid goal names. Goal name validation happens against this manifest — an unknown goal must not result in path construction.
-- ChromaDB is the only non-flat-file store, used exclusively for embedding vectors. Conversation history, goal configs, and context snapshots go into flat files only.
-- Schema changes to `messages.jsonl` and `context.json` must be backward-compatible. New fields added with defaults; existing files without new fields must still load correctly.
-- `goals_manifest.json` is a deterministic, idempotent output. Its content derives entirely from goal markdown files; it must not include timestamps or non-deterministic values.
+- All file I/O that may be concurrent must use `fcntl` advisory locks — read `src/corpus_council/core/store.py` for existing locking patterns and follow them exactly.
+- Write operations must be idempotent or transactional: a partial write must never leave the store in a corrupt state. Use write-to-temp-then-rename for atomic file replacement.
+- JSONL append operations are safe for concurrent writers only if each line is written atomically (single `write()` call) or the file is locked. Verify the existing pattern handles concurrent appends from `ThreadPoolExecutor` threads.
+- ChromaDB calls are thread-safe for in-process usage — do not add additional locking around them, but do not remove existing locking either.
+- Schema changes to stored JSONL records (e.g., adding an `escalation_flag` field to a member response record) must be backward-compatible: existing records without the new field must still be readable.
+- Never introduce a relational database, message queue, or external service. Flat files plus ChromaDB remain the only persistence layer.
 
 ### Implementation Approach
 
-1. **Understand the existing `FileStore` pattern in `src/corpus_council/core/store.py`.** Identify the sharding helper (how `user_id` maps to a shard prefix). New path helpers must use the same sharding logic.
-
-2. **Implement `goal_messages_path` in `FileStore`.**
-
-   ```python
-   def goal_messages_path(self, user_id: str, goal: str, conversation_id: str) -> Path:
-       if ".." in conversation_id.split("/"):
-           raise ValueError("Invalid conversation_id")
-       shard = self._shard(user_id)
-       return self.base / "users" / shard / user_id / "goals" / goal / conversation_id / "messages.jsonl"
-   ```
-
-   Returns a `Path` — does not create directories. Callers create parent directories before writing.
-
-3. **Implement `goal_context_path` in `FileStore`.**
-
-   ```python
-   def goal_context_path(self, user_id: str, goal: str, conversation_id: str) -> Path:
-       if ".." in conversation_id.split("/"):
-           raise ValueError("Invalid conversation_id")
-       shard = self._shard(user_id)
-       return self.base / "users" / shard / user_id / "goals" / goal / conversation_id / "context.json"
-   ```
-
-4. **Implement turn persistence in `run_goal_chat` (`src/corpus_council/core/chat.py`).**
-
-   After deliberation, append the turn as a single JSONL record:
-   ```python
-   import json
-   from datetime import datetime, timezone
-
-   turn = {
-       "user": message,
-       "assistant": response_text,
-       "timestamp": datetime.now(timezone.utc).isoformat(),
-   }
-   messages_path = store.goal_messages_path(user_id, goal_name, conversation_id)
-   messages_path.parent.mkdir(parents=True, exist_ok=True)
-   with open(messages_path, "a", encoding="utf-8") as f:
-       f.write(json.dumps(turn) + "\n")
-   ```
-
-   A single `json.dumps` + newline guarantees the record is written atomically at the OS level for reasonable message sizes. No fcntl locking is required for append-only JSONL.
-
-5. **Validate `goal_name` against the manifest before path construction.** In `run_goal_chat`, load `goals_manifest.json` first. If the `goal_name` key is absent, raise `KeyError` (the router maps this to 404). Never construct a path with an unvalidated `goal_name`.
-
-6. **Confirm `goal` and `conversation_id` are safe path components.** Neither should contain `/` (other than the `..` check already applied to `conversation_id`). For `goal`, validate it is a simple identifier (alphanumeric + hyphens/underscores only, no slashes) before use in path construction.
-
-7. **Do not introduce new storage schemas for the chat router beyond `messages.jsonl` and `context.json`.** These are the only two files per conversation. Do not add a `sessions/` index, a `manifest.json` at the user level, or any other auxiliary file.
-
-8. **Confirm `goals_manifest.json` is read-only from `run_goal_chat`.** The goal processing pipeline writes it; the chat runtime only reads it. Never write to `goals_manifest.json` from within `run_goal_chat` or the `POST /chat` router.
-
-9. **Confirm the `data/` directory layout after the change.** The old per-user conversation paths (from the deleted `conversation.py`) should not appear in new code. New paths are exclusively under `users/{shard}/{user_id}/goals/`.
-
-10. **Confirm no new Python packages are introduced.** All file I/O uses the standard library (`pathlib`, `json`, `fcntl` if needed). No new dependencies in `pyproject.toml`.
+1. **Read `src/corpus_council/core/store.py`** fully to understand the current locking and I/O patterns.
+2. **Assess whether the parallel deliberation change requires any store changes**:
+   - If member responses are written to a JSONL store during deliberation, concurrent writes from the `ThreadPoolExecutor` threads will now hit the store simultaneously. Confirm the existing `fcntl` lock covers this case, or add locking if it does not.
+   - If the store accumulates deliberation records and the schema needs a new field (e.g., `escalation_flag: bool`), add it as an optional field with a default so old records remain valid.
+3. **If a schema change is required**:
+   - Add the field as `Optional[bool]` (or equivalent) with `None` as default.
+   - Add a comment noting the field was added for parallel mode; no migration script is needed for flat files when the change is backward-compatible.
+4. **Confirm ChromaDB integration** in `src/corpus_council/core/retrieval.py` is unaffected by the parallel deliberation change — corpus chunk retrieval happens before the `ThreadPoolExecutor` phase, once per request, not once per thread.
+5. **Run verification** before declaring done.
 
 ### Verification
 
 ```
-uv run ruff check .
-uv run ruff format --check .
-uv run pyright src/
-uv run pytest tests/unit/test_store_paths.py
-uv run pytest
+uv run ruff check src/
+uv run ruff format --check src/
+uv run mypy src/
+uv run pytest tests/
 ```
 
-Manually confirm path structure after a `POST /chat` call:
-```bash
-# After sending a chat message, verify the path structure
-find data/users -name "messages.jsonl" | head -5
-# Expected pattern: data/users/<shard>/<user_id>/goals/<goal>/<conversation_id>/messages.jsonl
-```
+Also verify manually:
+- `src/corpus_council/core/store.py` uses `fcntl` locks for all write paths that will be hit concurrently by `ThreadPoolExecutor` threads.
+- No new package dependencies in `pyproject.toml`.
 
 ### Save
 
@@ -108,22 +56,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The data-engineer cares about data integrity, consistent path construction, and whether the new goal-keyed conversation layout correctly isolates conversations by goal, user, and thread.
+The data-engineer cares about data integrity, safe concurrent access to the flat-file store, and schema evolution that does not break existing records.
 
 ### What I flag
 
-- `goal_messages_path` that validates `conversation_id` but not `goal_name` — both are caller-influenced path components and both must be safe before path construction
-- Turn persistence that appends user message and assistant response as two separate writes — a crash between writes produces a corrupt partial record; one JSONL line per turn
-- New path helpers that use a different sharding strategy than existing `FileStore` methods — inconsistent sharding means user data is scattered across different shard directories
-- `run_goal_chat` that constructs a path with `goal_name` before validating it against the manifest — an unknown goal name could create directories with adversarial characters
-- A `context.json` write pattern that overwrites without atomic rename — for context snapshots that grow across turns, a crash mid-write truncates the history
-- The old per-user conversation path format still being written by any code path after the `conversation.py` deletion — divergent write paths mean the data store has two incompatible formats
-- Non-deterministic manifest reads — if `goals_manifest.json` is read twice in a single request (once for validation, once for config), the content could differ if the file is being rewritten concurrently
+- Concurrent writes from `ThreadPoolExecutor` threads to a JSONL file without an `fcntl` lock — this will produce interleaved or truncated lines under load.
+- Schema changes that make existing records unreadable (removing a field that code expects to always be present, or changing a field type non-additively).
+- ChromaDB retrieval happening inside the parallel phase — it should happen once before the executor, not once per thread, to avoid redundant embeddings work and potential contention.
+- Write-then-read patterns where a thread writes a partial record and another thread reads it before the write completes.
+- Any new external service or database being introduced — the constraint is flat files plus ChromaDB only.
 
 ### Questions I ask
 
-- If the server crashes between writing the user message and writing the assistant response, is the JSONL file still parseable?
-- Does `goal_messages_path` with a `conversation_id` of `"../../../etc"` raise `ValueError` before any `Path` object is constructed?
-- Does the shard for `goal_messages_path("alice", "default", "conv1")` match the shard for other `alice` data already in the store?
-- After `run_goal_chat` completes, does `messages.jsonl` contain exactly one line per turn with both `user` and `assistant` fields?
-- Is `goals_manifest.json` read exactly once per `run_goal_chat` call, with the result used for both validation and config loading?
+- Are all file writes that will be hit concurrently protected by the existing `fcntl` lock pattern in `store.py`?
+- If a new field is added to a stored record schema, can the existing reader code handle records that pre-date the field?
+- Does corpus chunk retrieval happen before the `ThreadPoolExecutor` phase, ensuring each member thread receives a pre-computed list rather than performing its own retrieval?
+- Is the store left in a consistent state if a thread raises an exception mid-write?

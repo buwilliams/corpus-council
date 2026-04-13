@@ -4,118 +4,44 @@
 
 ### Role
 
-Owns the `POST /chat` endpoint contract, the `ChatRequest`/`ChatResponse` Pydantic models, HTTP status code conventions, and the CLI `chat` interface design — ensuring the REST and CLI surfaces are coherent, consistent, and cleanly replace all old query/conversation/collection surfaces.
+Owns the FastAPI endpoint contracts, request/response shapes, HTTP status codes, and CLI interface design for the parallel deliberation feature; ensures REST and CLI surfaces are coherent, consistent, and free of the old `"sequential"` mode name.
 
 ### Guiding Principles
 
-- `POST /chat` is the single conversational endpoint. No other endpoint accepts a user message and returns an LLM response.
-- Every endpoint must have an explicit Pydantic request model and an explicit Pydantic response model. No `dict` or `Any` as a response type.
-- HTTP status codes must be semantically correct: 200 for success, 400 for invalid `conversation_id` (path traversal), 404 for unknown goal, 422 for Pydantic validation failures (including invalid `user_id`), 500 for unexpected server errors.
-- Field names follow `snake_case` throughout. No mixing conventions.
-- Error responses always include a human-readable `"detail"` or `"error"` field. Never return an empty 500 or raw exception message.
-- `conversation_id` is always a UUID string when auto-generated. Caller-supplied `conversation_id` is validated before use.
-- All new Pydantic models use `model_config = ConfigDict(extra="forbid")` to reject unexpected fields.
-- Breaking changes to remaining endpoints (e.g., `GET /goals`, `POST /corpus/ingest`, `POST /corpus/embed`) are not permitted.
+- The `mode` field in API request/response shapes must accept `"parallel"` and `"consolidated"` only — never `"sequential"`. The old value must not appear as a valid enum member.
+- All API error responses must use consistent shapes — do not introduce a new error structure for deliberation errors; reuse whatever shape is established in `src/corpus_council/api/models.py`.
+- HTTP status codes must be semantically correct: 200 for success, 422 for validation errors (FastAPI default for Pydantic), 500 for unhandled server errors. Do not invent new codes.
+- CLI `--mode` flag must match API `mode` field exactly — same string values, same default. A user must be able to translate their CLI invocation directly to an equivalent API call without translation.
+- No breaking changes to response shapes that already work — adding fields is acceptable, removing or renaming existing fields requires the spec to explicitly require it.
+- All Pydantic models must have explicit type annotations compatible with mypy strict mode.
 
 ### Implementation Approach
 
-1. **Define all Pydantic models before writing endpoint functions.** Place in `src/corpus_council/api/models.py`.
-
-   Request model:
-   ```python
-   from pydantic import BaseModel, ConfigDict
-
-   class ChatRequest(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       goal: str
-       user_id: str
-       conversation_id: str | None = None
-       message: str
-       mode: str | None = None
+1. **Read `src/corpus_council/api/models.py`** fully before making any change. Understand the current request/response structures.
+2. **Update the `mode` field**:
+   - If `mode` is a `Literal["sequential", "consolidated"]` or similar, change it to `Literal["parallel", "consolidated"]`.
+   - If `mode` is a plain `str`, add a `Literal` type or `Enum` to enforce valid values.
+   - Set the default to `"parallel"`.
+3. **Read `src/corpus_council/cli/main.py`** and update the `--mode` flag:
+   - Change `choices=["sequential", "consolidated"]` (or equivalent) to `choices=["parallel", "consolidated"]`.
+   - Update help text to describe parallel behavior — mention that parallel runs all non-position-1 members concurrently.
+   - Update the default value to `"parallel"`.
+4. **Read the FastAPI router files** under `src/corpus_council/api/routers/` and confirm the endpoint that accepts `mode` passes it correctly to `deliberation.py` — no string transformation, no aliasing.
+5. **Update OpenAPI docstrings** on the relevant endpoint and Pydantic model fields to describe parallel behavior.
+6. **Confirm no other route or model** still references `"sequential"` as a valid value:
    ```
-
-   Response model:
-   ```python
-   class ChatResponse(BaseModel):
-       model_config = ConfigDict(extra="forbid")
-       response: str
-       goal: str
-       conversation_id: str
+   grep -r "sequential" src/
    ```
-
-   Remove from `models.py`: `ConversationRequest`, `ConversationResponse`, `CollectionStartRequest`, `CollectionStartResponse`, `CollectionRespondRequest`, `CollectionRespondResponse`, `CollectionStatusResponse`, `QueryRequest`, `QueryResponse`.
-
-2. **Define the complete `POST /chat` contract:**
-
-   | Field | Type | Required | Notes |
-   |-------|------|----------|-------|
-   | `goal` | string | yes | Must match a key in `goals_manifest.json`; 404 if not found |
-   | `user_id` | string | yes | Validated via `validate_id`; 422 if invalid |
-   | `conversation_id` | string | no | UUID; auto-generated if absent; 400 if contains `..` |
-   | `message` | string | yes | The user's message text |
-   | `mode` | string | no | `"sequential"` or `"consolidated"`; passed to deliberation |
-
-   Response:
-   | Field | Type | Notes |
-   |-------|------|-------|
-   | `response` | string | The assistant's response text |
-   | `goal` | string | Echo of the request `goal` |
-   | `conversation_id` | string | The UUID for this conversation thread |
-
-   Error cases:
-   - Unknown `goal` → 404 `{"detail": "Goal not found: '<name>'"}`
-   - `user_id` fails `validate_id` → 422 (Pydantic/FastAPI validation error)
-   - `conversation_id` contains `..` → 400 `{"detail": "Invalid conversation_id"}`
-   - Unexpected error → 500 `{"detail": "Internal server error"}`
-
-3. **Define the CLI `chat` interface contract:**
-
-   ```
-   chat <user_id> --goal <goal_name> [--session <conversation_id>] [--mode sequential|consolidated]
-   ```
-
-   - `user_id`: positional, required
-   - `--goal`: option, required; missing goal prints "Error: --goal is required" and exits 1
-   - `--session`: option, optional; resumes an existing conversation thread
-   - `--mode`: option, optional; default behavior if absent
-
-   Interactive loop behavior:
-   - Prompt: `> ` (or similar)
-   - Each turn prints the assistant response
-   - After the first turn, the generated `conversation_id` is printed once (so the user can resume with `--session`)
-   - Ctrl-C / EOF exits cleanly with no error traceback
-
-4. **Confirm no new endpoints are added for query, conversation, or collection.** The new chat router registers exactly one route: `POST /chat`.
-
-5. **Confirm `GET /goals` contract is unchanged.** This endpoint (existing) lists available goals. The frontend Goals tab depends on it for the goal selector dropdown. Do not modify its response shape.
-
-6. **Validate that `mode` values are constrained.** If the router validates `mode`, it should only accept `"sequential"`, `"consolidated"`, or `None`. Reject other values with 422.
+7. **Run verification** before declaring done.
 
 ### Verification
 
 ```
-uv run ruff check .
-uv run ruff format --check .
-uv run pyright src/
-uv run pytest tests/integration/test_chat_api.py
-```
-
-Also confirm the endpoint contract manually:
-```bash
-# Happy path — should return {response, goal, conversation_id}
-curl -s -X POST http://127.0.0.1:8765/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"goal":"default","user_id":"testuser","message":"hello"}' | python3 -m json.tool
-
-# Unknown goal — must return 404
-curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8765/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"goal":"nonexistent","user_id":"testuser","message":"hello"}'
-
-# Invalid conversation_id — must return 400
-curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8765/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"goal":"default","user_id":"testuser","conversation_id":"../evil","message":"hello"}'
+uv run ruff check src/
+uv run ruff format --check src/
+uv run mypy src/
+uv run pytest tests/
+grep -r "sequential" src/  # must return nothing user-facing
 ```
 
 ### Save
@@ -134,22 +60,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The api-designer cares about interface consistency, client predictability, and whether the frontend and CLI can use `POST /chat` correctly without reading the source code.
+The api-designer cares about interface consistency, contract stability, and ensuring that the REST and CLI surfaces are coherent with each other and accurately reflect the new parallel deliberation behavior.
 
 ### What I flag
 
-- `POST /chat` returning `conversation_id` only when it was auto-generated — the frontend must always receive `conversation_id` in the response to enable continuation
-- `goal` missing from the response body — the frontend needs to confirm which goal was used; omitting it forces the client to track state redundantly
-- `mode` accepting arbitrary strings instead of being constrained to `"sequential" | "consolidated" | null` — an unconstrained mode silently falls back to a default, making misconfiguration invisible
-- The CLI `chat` command accepting `--goal` as optional with no enforcement — a Typer `Option` without `required=True` will not exit 1 on a missing value unless explicitly handled
-- Old models (`ConversationRequest`, `QueryRequest`, etc.) left in `models.py` — if they import from deleted router files, the entire API fails to start
-- `POST /chat` returning 200 with `{"error": "..."}` in the body instead of a proper HTTP error status — clients must be able to detect errors from the status code alone
-- Inconsistent field naming between `ChatRequest` (snake_case) and internal function parameters — callers must not need to map field names
+- `mode` field accepting `"sequential"` as a valid value in any Pydantic model or CLI choices list — this is a user-visible contract violation.
+- CLI `--mode` defaults or choices that diverge from the API `mode` field defaults or values — the two surfaces must be in sync.
+- Inconsistent error response shapes introduced for deliberation-specific errors.
+- Response fields that expose internal implementation details (e.g., thread counts, future IDs) — API responses should describe behavior, not mechanism.
+- Missing or stale OpenAPI field descriptions that still describe sequential behavior.
 
 ### Questions I ask
 
-- Does `POST /chat` always return `conversation_id` in the response, even when the caller supplied one?
-- Does the CLI `chat` command with no `--goal` argument print a useful error message and exit with code 1?
-- Does `POST /chat` with `mode="invalid_value"` return 422, not silently run with an unknown mode?
-- Are all old Pydantic models removed from `models.py` before any task is marked complete?
-- Does `GET /goals` still return the same response shape as before, with no changes from the Goals Unification refactor?
+- Are the valid values for `mode` identical in the Pydantic model, the CLI choices list, and the documentation?
+- If a client currently sends `mode: "sequential"`, do they get a clear 422 validation error rather than a silent fallback?
+- Does the response shape for a parallel deliberation response include all information a client needs (member responses, escalation flags if any)?
+- Is the default mode consistent between `config.yaml`, the API default, and the CLI default?

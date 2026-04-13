@@ -9,3 +9,4 @@
 - **data-engineer** — Owns the flat-file store design, sharding strategy, fcntl locking, JSONL/JSON schemas, and ChromaDB integration
 - **security-engineer** — Reviews API key handling, file I/O safety, input validation, and path traversal risks at system boundaries
 - **ux-engineer** — Owns the frontend 3-tab Goals/Files/Admin layout; ensures Goals chat UX is clear and wires correctly to POST /chat; removes all obsolete tab code
+- **concurrency-engineer** — Owns thread-safety, ThreadPoolExecutor usage, and any concurrency-related risks in the parallel deliberation implementation
