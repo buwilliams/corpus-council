@@ -81,6 +81,8 @@ def run_consolidated_deliberation(
     corpus_chunks: list[ChunkResult],
     members: list[CouncilMember],
     llm: LLMClient,
+    goal_name: str = "",
+    goal_description: str = "",
 ) -> DeliberationResult:
     """Run consolidated deliberation with exactly 2 LLM invocations.
 
@@ -88,6 +90,19 @@ def run_consolidated_deliberation(
     Second: evaluator_consolidated — synthesises the council output into a final answer.
     """
     corpus_text = _format_chunks(corpus_chunks)
+
+    position_one = next(m for m in members if m.position == 1)
+    position_one_system_prompt = llm.render_template(
+        "member_system",
+        {
+            "member_name": position_one.name,
+            "persona": position_one.persona,
+            "primary_lens": position_one.primary_lens,
+            "role_type": position_one.role_type,
+            "goal_name": goal_name,
+            "goal_description": goal_description,
+        },
+    )
 
     # Call 1: council — pass members as a list so the template can iterate attributes.
     council_context: dict[str, Any] = {
@@ -108,7 +123,11 @@ def run_consolidated_deliberation(
         "council_responses": council_output,
         "escalation_summary": escalation_summary,
     }
-    final_response = llm.call("evaluator_consolidated", evaluator_context)
+    final_response = llm.call(
+        "evaluator_consolidated",
+        evaluator_context,
+        system_prompt=position_one_system_prompt,
+    )
 
     return DeliberationResult(
         final_response=final_response,

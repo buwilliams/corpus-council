@@ -36,8 +36,8 @@ def _format_member_responses(log: list[MemberLog]) -> str:
     if not log:
         return "No member responses."
     return "\n\n".join(
-        f"**{entry.member_name} (position {entry.position}):**\n{entry.response}"
-        for entry in log
+        f"**Perspective {i}:**\n{entry.response}"
+        for i, entry in enumerate(log, start=1)
     )
 
 
@@ -45,10 +45,7 @@ def _format_escalation_flags(log: list[MemberLog]) -> str:
     flagged = [e for e in log if e.escalation_triggered]
     if not flagged:
         return "No escalations flagged."
-    return "\n".join(
-        f"- {e.member_name} (position {e.position}): escalation triggered"
-        for e in flagged
-    )
+    return "\n".join("- escalation triggered" for _ in flagged)
 
 
 def _call_member(

@@ -152,13 +152,24 @@ def test_run_consolidated_deliberation_makes_exactly_two_calls(
     calls: list[tuple[str, dict[str, Any]]] = []
     council_output = _make_normal_council_output(members)
 
-    def fake_call(self: LLMClient, template_name: str, context: dict[str, Any]) -> str:
+    def fake_call(
+        self: LLMClient,
+        template_name: str,
+        context: dict[str, Any],
+        **kwargs: Any,
+    ) -> str:
         calls.append((template_name, context))
         if template_name == "council_consolidated":
             return council_output
         return "Final synthesized answer."
 
+    def fake_render_template(
+        self: LLMClient, template_name: str, context: dict[str, Any]
+    ) -> str:
+        return f"System prompt for {template_name}"
+
     monkeypatch.setattr(LLMClient, "call", fake_call)
+    monkeypatch.setattr(LLMClient, "render_template", fake_render_template)
 
     run_consolidated_deliberation(
         user_message="What is AI?",
@@ -182,12 +193,23 @@ def test_run_consolidated_deliberation_returns_deliberation_result(
 
     council_output = _make_normal_council_output(members)
 
-    def fake_call(self: LLMClient, template_name: str, context: dict[str, Any]) -> str:
+    def fake_call(
+        self: LLMClient,
+        template_name: str,
+        context: dict[str, Any],
+        **kwargs: Any,
+    ) -> str:
         if template_name == "council_consolidated":
             return council_output
         return "Final synthesized answer from evaluator."
 
+    def fake_render_template(
+        self: LLMClient, template_name: str, context: dict[str, Any]
+    ) -> str:
+        return f"System prompt for {template_name}"
+
     monkeypatch.setattr(LLMClient, "call", fake_call)
+    monkeypatch.setattr(LLMClient, "render_template", fake_render_template)
 
     result = run_consolidated_deliberation(
         user_message="Tell me about nutrition.",
@@ -215,13 +237,24 @@ def test_run_consolidated_deliberation_extracts_escalation(
 
     evaluator_contexts: list[dict[str, Any]] = []
 
-    def fake_call(self: LLMClient, template_name: str, context: dict[str, Any]) -> str:
+    def fake_call(
+        self: LLMClient,
+        template_name: str,
+        context: dict[str, Any],
+        **kwargs: Any,
+    ) -> str:
         if template_name == "council_consolidated":
             return council_output
         evaluator_contexts.append(context)
         return "Escalation-aware final answer."
 
+    def fake_render_template(
+        self: LLMClient, template_name: str, context: dict[str, Any]
+    ) -> str:
+        return f"System prompt for {template_name}"
+
     monkeypatch.setattr(LLMClient, "call", fake_call)
+    monkeypatch.setattr(LLMClient, "render_template", fake_render_template)
 
     result = run_consolidated_deliberation(
         user_message="Tell me something off-topic.",

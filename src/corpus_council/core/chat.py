@@ -74,7 +74,14 @@ def run_goal_chat(
 
     # 5. Run deliberation
     if mode == "consolidated":
-        result = run_consolidated_deliberation(message, chunks, members, llm)
+        result = run_consolidated_deliberation(
+            message,
+            chunks,
+            members,
+            llm,
+            goal_name=goal_name,
+            goal_description=goal_config.desired_outcome,
+        )
     else:
         result = run_deliberation(
             message,
