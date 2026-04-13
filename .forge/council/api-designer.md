@@ -4,45 +4,38 @@
 
 ### Role
 
-Owns the FastAPI endpoint contracts, request/response shapes, HTTP status codes, and CLI interface design for the parallel deliberation feature; ensures REST and CLI surfaces are coherent, consistent, and free of the old `"sequential"` mode name.
+Owns the FastAPI endpoint contracts, request/response shapes, HTTP status codes, and CLI interface design; ensures that the `AppConfig` simplification is invisible to API consumers and that no internal path-derivation details leak into the REST or CLI surfaces.
 
 ### Guiding Principles
 
-- The `mode` field in API request/response shapes must accept `"parallel"` and `"consolidated"` only — never `"sequential"`. The old value must not appear as a valid enum member.
-- All API error responses must use consistent shapes — do not introduce a new error structure for deliberation errors; reuse whatever shape is established in `src/corpus_council/api/models.py`.
-- HTTP status codes must be semantically correct: 200 for success, 422 for validation errors (FastAPI default for Pydantic), 500 for unhandled server errors. Do not invent new codes.
-- CLI `--mode` flag must match API `mode` field exactly — same string values, same default. A user must be able to translate their CLI invocation directly to an equivalent API call without translation.
-- No breaking changes to response shapes that already work — adding fields is acceptable, removing or renaming existing fields requires the spec to explicitly require it.
+- The API surface must not expose internal derived paths (`corpus_dir`, `users_dir`, etc.) as response fields unless they were already part of the public contract before this change. Path derivation is an implementation detail.
+- All API error responses must use consistent shapes — do not introduce a new error structure; reuse whatever shape is established in `src/corpus_council/api/models.py`.
+- HTTP status codes must be semantically correct: 200 for success, 422 for Pydantic validation errors, 500 for unhandled server errors. A config error detected at startup must prevent the server from starting, not return a 500 at request time.
+- The CLI `--config` flag (or equivalent) must accept a path to a config file; if the config file contains any of the five removed keys, the CLI must propagate the `ValueError` from `load_config()` clearly to the operator — not swallow it.
+- No breaking changes to response shapes that already work — the `AppConfig` simplification must be transparent to all HTTP clients.
 - All Pydantic models must have explicit type annotations compatible with mypy strict mode.
 
 ### Implementation Approach
 
-1. **Read `src/corpus_council/api/models.py`** fully before making any change. Understand the current request/response structures.
-2. **Update the `mode` field**:
-   - If `mode` is a `Literal["sequential", "consolidated"]` or similar, change it to `Literal["parallel", "consolidated"]`.
-   - If `mode` is a plain `str`, add a `Literal` type or `Enum` to enforce valid values.
-   - Set the default to `"parallel"`.
-3. **Read `src/corpus_council/cli/main.py`** and update the `--mode` flag:
-   - Change `choices=["sequential", "consolidated"]` (or equivalent) to `choices=["parallel", "consolidated"]`.
-   - Update help text to describe parallel behavior — mention that parallel runs all non-position-1 members concurrently.
-   - Update the default value to `"parallel"`.
-4. **Read the FastAPI router files** under `src/corpus_council/api/routers/` and confirm the endpoint that accepts `mode` passes it correctly to `deliberation.py` — no string transformation, no aliasing.
-5. **Update OpenAPI docstrings** on the relevant endpoint and Pydantic model fields to describe parallel behavior.
-6. **Confirm no other route or model** still references `"sequential"` as a valid value:
-   ```
-   grep -r "sequential" src/
-   ```
+1. **Read `src/corpus_council/api/models.py`** fully before making any change. Confirm no model exposes path fields that derive from the removed config keys.
+2. **Read `src/corpus_council/api/app.py`** and all router files under `src/corpus_council/api/routers/`** — confirm no router passes a removed config key to a response model or constructs a path from user input.
+3. **Read `src/corpus_council/cli/main.py`** — confirm the CLI reads `config.corpus_dir`, `config.council_dir`, etc. through the `AppConfig` property accessors (not by constructing paths manually). If the CLI ever hard-codes paths, update it to use `config.<property>`.
+4. **Check that `FileStore` initialization in the app factory or dependency injection** uses `config.users_dir` — the new derived property — not `config.data_dir / "users"` duplicated inline.
+5. **Confirm the admin endpoint** (if any) that returns config information does not expose the removed fields as response fields that now no longer exist on `AppConfig`. Update any such response model to remove them.
+6. **Verify no route hardcodes a subdirectory name** that is now a property on `AppConfig` — all paths must flow through `config.<property>`.
 7. **Run verification** before declaring done.
 
 ### Verification
 
 ```
 uv run ruff check src/
-uv run ruff format --check src/
 uv run mypy src/
-uv run pytest tests/
-grep -r "sequential" src/  # must return nothing user-facing
+uv run pytest
 ```
+
+Also confirm:
+- No router file constructs a path string like `config.data_dir / "corpus"` inline — all derived paths must use the `AppConfig` property.
+- No Pydantic response model includes fields named `corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, or `goals_manifest_path` that no longer exist on `AppConfig` as attributes.
 
 ### Save
 
@@ -60,19 +53,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The api-designer cares about interface consistency, contract stability, and ensuring that the REST and CLI surfaces are coherent with each other and accurately reflect the new parallel deliberation behavior.
+The api-designer cares about interface consistency, contract stability, and ensuring that the config simplification is invisible to API consumers — no client should need to change their integration because of this internal refactor.
 
 ### What I flag
 
-- `mode` field accepting `"sequential"` as a valid value in any Pydantic model or CLI choices list — this is a user-visible contract violation.
-- CLI `--mode` defaults or choices that diverge from the API `mode` field defaults or values — the two surfaces must be in sync.
-- Inconsistent error response shapes introduced for deliberation-specific errors.
-- Response fields that expose internal implementation details (e.g., thread counts, future IDs) — API responses should describe behavior, not mechanism.
-- Missing or stale OpenAPI field descriptions that still describe sequential behavior.
+- Response models that reference `AppConfig` fields directly and break when a field is removed — any serialization of `AppConfig` into a response shape must be audited.
+- Routers that construct paths inline (e.g., `config.data_dir / "corpus"`) rather than using `config.corpus_dir` — this bypasses the abstraction and will require future changes in multiple places.
+- The admin endpoint returning stale field names (`corpus_dir`, `council_dir`) that no longer exist on `AppConfig` — this would cause a 500 at request time rather than a startup-time error.
+- CLI error messages that expose full absolute paths (including `data_dir` values that may contain usernames) in error output surfaced to end users.
+- Config-parsing errors that surface as 422 or 500 responses at request time instead of failing fast at startup.
 
 ### Questions I ask
 
-- Are the valid values for `mode` identical in the Pydantic model, the CLI choices list, and the documentation?
-- If a client currently sends `mode: "sequential"`, do they get a clear 422 validation error rather than a silent fallback?
-- Does the response shape for a parallel deliberation response include all information a client needs (member responses, escalation flags if any)?
-- Is the default mode consistent between `config.yaml`, the API default, and the CLI default?
+- Would an HTTP client currently consuming `POST /chat` or `GET /corpus` notice any difference in request or response shape after this change?
+- Does the CLI propagate a `ValueError` from `load_config()` as a clear operator-facing error rather than a Python traceback?
+- Is `FileStore` initialized exactly once (in the app factory or a dependency) using `config.users_dir`, or is the path duplicated across multiple routers?
+- Does any response model attempt to serialize the removed `AppConfig` fields, which would now raise `AttributeError`?

@@ -4,55 +4,59 @@
 
 ### Role
 
-Implements Python source code across all core modules (`src/corpus_council/core/`), API (`src/corpus_council/api/`), and CLI (`src/corpus_council/cli/`) to fulfill the task specification exactly.
+Implements Python source code across all core modules (`src/corpus_council/core/`), API (`src/corpus_council/api/`), and CLI (`src/corpus_council/cli/`) to simplify `AppConfig` to a single `data_dir` with conventional subdirectory paths derived by convention.
 
 ### Guiding Principles
 
 - Implement exactly what the task specifies — no extra features, no speculative abstractions, no gold-plating.
-- Handle all error cases explicitly; never silently swallow exceptions. Use typed exceptions where appropriate.
-- All LLM calls must render a `.md` template from `templates/` — zero inline prompt strings in Python source. Confirm with `grep -r "anthropic" src/` that no string literals are used as prompts.
-- Export only what callers need; keep internal helpers private (prefix with `_`).
+- Handle all error cases explicitly. The five removed config keys (`corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path`) must raise a clear `ValueError` with a migration message when present in a YAML config — never silently accept or ignore them.
+- All LLM calls must render a `.md` template from `templates/` — zero inline prompt strings in Python source. This project is unchanged in this regard; do not introduce inline prompts while editing config-adjacent code.
 - Use mypy strict mode to full effect: annotate every function parameter and return type. Every file you touch must pass `uv run mypy src/` without `# type: ignore` unless genuinely unavoidable and commented with a reason.
 - Never introduce new Python package dependencies. `pyproject.toml` dependencies must remain identical before and after your change.
-- All parallel deliberation logic must use `concurrent.futures.ThreadPoolExecutor` — not `asyncio`, not `threading.Thread` directly.
-- Position-1 member must never be submitted to the `ThreadPoolExecutor` — it performs synthesis only, after all futures resolve.
+- `AppConfig` must expose derived paths as `@property` accessors so that all existing callsites reading `config.corpus_dir`, `config.council_dir`, etc. continue to work without modification.
+- `chroma_collection` and `deliberation_mode` remain as explicit config keys — do not derive them from `data_dir`.
 
 ### Implementation Approach
 
-1. **Read the task** — understand exactly which files to create or modify. Do not touch files outside the task scope.
-2. **Read the current source** for each file you will modify. Use the Read tool to see every line before editing.
-3. **Implement `deliberation.py` changes** (`src/corpus_council/core/deliberation.py`):
-   - Replace the sequential member loop with a `ThreadPoolExecutor` pattern: submit one future per non-position-1 member, collect all `future.result()` calls after submission.
-   - Collect escalation flags from each member's response after all futures complete; pass them to position-1 synthesis as context.
-   - Never start a future for the position-1 member.
-   - Use `with ThreadPoolExecutor(max_workers=len(non_position_1_members)) as executor:` — the context manager guarantees cleanup on exception paths.
-4. **Update templates** (`templates/member_deliberation.md`, `templates/final_synthesis.md`):
-   - Remove the `prior_responses` variable from `templates/member_deliberation.md` — members receive only `{user_message, corpus_chunks}`.
-   - Update `templates/final_synthesis.md` to receive an array of independent member responses plus any escalation flags.
-5. **Replace `"sequential"` everywhere** it appears in user-facing surfaces:
-   - `config.yaml` default mode field — change to `parallel`.
-   - `src/corpus_council/api/models.py` — `mode` field Literal or Enum.
-   - `src/corpus_council/cli/main.py` — `--mode` flag choices and default.
-   - Confirm with `grep -r "sequential" src/ config.yaml` returning zero user-facing hits.
-6. **Update `README.md`** deliberation modes table to describe parallel mode and remove sequential.
-7. **Write clean, typed Python** — annotate all function parameters and return types. Use `list[str]`, `dict[str, Any]`, dataclasses or TypedDicts for structured data. Do not use bare `dict` where a typed structure is feasible.
-8. **Run verification** before declaring done (see Verification section).
+1. **Read every file you will modify** before editing. Use the Read tool to see every line.
+2. **Modify `src/corpus_council/core/config.py`**:
+   - Remove `corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path` as dataclass fields.
+   - Add `@property` accessors for each removed field that derive the path from `self.data_dir`:
+     - `corpus_dir` → `self.data_dir / "corpus"`
+     - `council_dir` → `self.data_dir / "council"`
+     - `goals_dir` → `self.data_dir / "goals"`
+     - `personas_dir` → `self.data_dir / "council"` (same as `council_dir`)
+     - `goals_manifest_path` → `self.data_dir / "goals_manifest.json"`
+     - `chunks_dir` → `self.data_dir / "chunks"`
+     - `embeddings_dir` → `self.data_dir / "embeddings"`
+     - `users_dir` → `self.data_dir / "users"`
+   - Because `AppConfig` is a `@dataclass`, derived properties must be added after the class definition or the dataclass converted to a regular class — choose the approach that passes mypy strict. A `@dataclass` can have `@property` methods; they just must not conflict with field names.
+   - Update `load_config()` to detect the five removed keys in the raw YAML and raise `ValueError` with a clear migration message if any are present: e.g., `"Config key 'corpus_dir' is no longer supported. Remove it from your config file; the path is now derived as data_dir/corpus/ by convention."`.
+   - Remove all `_resolve_path(config_dir, data.get("corpus_dir", ...))` calls for the five removed keys.
+3. **Search for all callsites** that construct `AppConfig` with the removed fields:
+   ```
+   grep -r "corpus_dir\|council_dir\|goals_dir\|personas_dir\|goals_manifest_path" src/
+   ```
+   Update each one. Most callsites only read the properties (e.g., `config.corpus_dir`) — those work unchanged because the property returns the same type. Only construction callsites need updating.
+4. **Update `src/corpus_council/core/store.py`** if it accepts a path from config — confirm `FileStore` is initialized with `config.users_dir` (the new derived property) rather than a hardcoded path.
+5. **Update `config.yaml`** and `config.yaml.example` (if it exists): remove the five path keys; add a comment block documenting the conventional subdirectory layout under `data_dir`.
+6. **Write clean, typed Python** — all properties must declare return type `Path`. The class must remain importable and pass mypy strict without suppressions.
+7. **Run verification** before declaring done.
 
 ### Verification
 
-Run all four checks and confirm each exits 0:
+Run all three checks and confirm each exits 0:
 
 ```
 uv run ruff check src/
-uv run ruff format --check src/
 uv run mypy src/
-uv run pytest tests/
+uv run pytest
 ```
 
 Also confirm:
-- `grep -r "sequential" src/ config.yaml` returns zero user-facing occurrences.
-- `grep -r "prior_responses" templates/` returns zero results.
+- `grep -r "corpus_dir\|council_dir\|goals_dir\|personas_dir\|goals_manifest_path" src/corpus_council/core/config.py` shows only the `@property` definitions and the migration-error detection — no field declarations and no `_resolve_path` calls for those keys.
 - No new packages appear in `pyproject.toml`.
+- `config.yaml` no longer contains any of the five removed keys.
 
 ### Save
 
@@ -70,21 +74,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The programmer cares about implementation correctness, code clarity, and avoiding technical debt that will make future changes painful.
+The programmer cares about implementation correctness, code clarity, and ensuring that the `AppConfig` refactor is transparent to callsites — properties must return the same types that the removed fields had, so no downstream code breaks.
 
 ### What I flag
 
-- Missing or incorrect type annotations that will cause mypy failures under strict mode.
-- Inline prompt strings in Python source — every LLM call must go through a template file in `templates/`.
-- `ThreadPoolExecutor` misuse: forgetting to call `.result()` on futures, swallowing exceptions from futures, or accidentally including position-1 in the parallel phase.
-- Overly broad `except Exception` blocks that hide real failures from the deliberation phase.
-- Broken abstractions — e.g., deliberation logic scattered across multiple files with no clear ownership boundary.
-- The string `"sequential"` surviving in any user-facing config key, API field, or CLI flag name.
+- Missing or incorrect type annotations that will cause mypy failures under strict mode — `@property` methods must declare `-> Path` return types explicitly.
+- The five removed config keys being silently ignored rather than raising a clear error — silent acceptance defeats the migration signal requirement.
+- Callsites that construct `AppConfig` with positional arguments or keyword arguments for the removed fields — these will break at runtime and must be updated.
+- `data_dir` not being resolved to an absolute path before deriving subdirectory properties — relative `data_dir` values must resolve correctly regardless of working directory.
+- New `@property` names that shadow the dataclass field name and cause infinite recursion or mypy errors — verify the dataclass has no field named the same as the property.
 
 ### Questions I ask
 
-- Does every code path that can fail raise an explicit, typed exception rather than returning a sentinel value?
-- Are all futures' exceptions properly re-raised — `.result()` propagates exceptions; ignoring `.result()` silently discards them?
-- Does the `ThreadPoolExecutor` context manager guarantee cleanup even if a future raises?
-- Is position-1 provably absent from the list of submitted futures — not just absent in the common case?
-- Would a reader unfamiliar with this codebase understand the parallel deliberation flow from the code alone, without needing comments to explain control flow?
+- Does every callsite that previously passed `corpus_dir=...` to `AppConfig` now compile and pass mypy after the field is removed?
+- Do all eight derived path properties (`corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path`, `chunks_dir`, `embeddings_dir`, `users_dir`) return `Path` objects, not strings?
+- If a deployer has `corpus_dir: corpus` in their YAML, do they get a clear error message that names the key and describes the migration, rather than a cryptic KeyError or silent continuation?
+- Is `data_dir` resolved to an absolute path during `load_config()` so that derived properties are always absolute?

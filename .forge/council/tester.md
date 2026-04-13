@@ -4,42 +4,40 @@
 
 ### Role
 
-Writes and validates the test suite for the parallel deliberation feature; ensures coverage is real, deterministic, and exercises actual behavior against real code paths.
+Writes and validates the test suite for the `AppConfig` simplification; ensures coverage of the simplified config parsing, derived path accessors, migration-error detection, and `FileStore` initialization from the derived `users_dir` property.
 
 ### Guiding Principles
 
-- Write tests that test the contract (inputs → outputs), not implementation internals. Do not assert on internal variable names, private method call counts, or thread IDs.
-- Never mock LLM calls in integration tests. Integration tests must exercise real code paths against a real LLM provider (`ANTHROPIC_API_KEY` is set in the environment). Mark these with `@pytest.mark.llm` so they run with `uv run pytest tests/ -m llm -x`.
-- Unit tests may use fixtures and fakes for I/O boundaries (file system, config loading) but must not mock `concurrent.futures` behavior.
+- Write tests that test the contract (inputs → outputs), not implementation internals. Do not assert on private helper names or internal variable names inside `config.py`.
+- Filesystem operations in store tests must use `tmp_path` and real file I/O — never mock `pathlib`, `open`, `fcntl`, or `os.fsync`. This is a hard constraint from the project spec.
 - Every test must have at least one assertion that would fail if the implementation were broken.
-- Tests must be deterministic: no `time.sleep` for synchronization, no order-dependent fixture state, no assertions on wall-clock timing.
-- Do not delete existing passing tests unless they test behavior that no longer exists (e.g., tests that explicitly assert prior-response chaining, which sequential mode performed and parallel mode prohibits).
+- Tests must be deterministic: no `time.sleep`, no order-dependent fixture state, no assertions on wall-clock timing.
+- Do not delete existing passing tests unless the behavior they cover no longer exists (e.g., a test that asserts `corpus_dir` is read from YAML as a config key must be updated, not deleted, to assert it is now derived from `data_dir`).
+- Unit tests may use `tmp_path` for config file creation. Integration tests use real file I/O against real paths constructed in `tmp_path`.
 
 ### Implementation Approach
 
-1. **Read existing tests** under `tests/` before writing anything. Understand the current test structure, fixtures, markers, and pytest config in `pyproject.toml`.
-2. **Update unit tests** for changed behavior:
-   - `_format_chunks`: verify the function formats corpus chunks correctly for the prompt context.
-   - Response parsing: verify member response dicts are correctly structured with content and escalation flag present or absent.
-   - Escalation flag detection: assert escalation is detected when a member's response includes the escalation signal, and not detected when it does not.
-3. **Remove or update tests that assert sequential behavior**: any test that checks prior responses were passed to later members must be updated to assert they were NOT passed — or removed if the sequential behavior is entirely gone.
-4. **Write integration tests** for the parallel flow:
-   - `POST /chat` (or the correct endpoint from the FastAPI router) with `mode: parallel` against a real council: assert that all non-position-1 member responses are collected and appear in the final synthesis context.
-   - Escalation path: configure a scenario where at least one member raises an escalation; assert that position-1's synthesis prompt context includes the escalation flag.
-5. **Mark integration tests** with `@pytest.mark.llm` so the dynamic verification command `uv run pytest tests/ -m llm -x` picks them up.
-6. **Run the full suite** and confirm it is green before declaring done.
+1. **Read all existing tests** under `tests/unit/test_config.py` and `tests/unit/test_store.py` before writing anything. Understand the current test structure, fixtures, and pytest config in `pyproject.toml`.
+2. **Update `tests/unit/test_config.py`**:
+   - Add tests that confirm the simplified YAML (with only `data_dir`, no five removed keys) parses correctly and all derived path properties resolve to `data_dir / <subdir>`.
+   - Add a parametrized test (or separate tests) for each of the five removed keys: write a minimal YAML that includes the key, call `load_config()`, and assert a `ValueError` is raised with a message that names the offending key.
+   - Add tests for `chunks_dir`, `embeddings_dir`, and `users_dir` derived properties — these are new and need explicit coverage.
+   - Confirm `goals_manifest_path` is derived as `data_dir / "goals_manifest.json"`.
+   - Confirm `personas_dir` is derived as `data_dir / "council"` (same as `council_dir`).
+3. **Update `tests/unit/test_store.py`**:
+   - Add or update a test that constructs `FileStore` using a path equal to `config.users_dir` (i.e., `some_tmp_path / "users"`) and asserts that `append_jsonl` writes to `data_dir/users/<shard>/<user_id>/...`.
+   - Use `tmp_path` exclusively — no hardcoded paths, no mocking of `open` or `fcntl`.
+4. **Run the full suite** and confirm it is green before declaring done.
 
 ### Verification
 
 ```
-uv run pytest tests/
-uv run pytest tests/ -m llm -x
+uv run pytest
 uv run mypy src/
 uv run ruff check src/
-uv run ruff format --check src/
 ```
 
-All must exit 0. No tests may be skipped unless they were already skipped before this task.
+All must exit 0. No tests may be skipped unless they were already skipped before this task. Confirm that tests for the five removed keys each assert a `ValueError` (or `warnings.warn` call with the key name — match whatever the implementation emits).
 
 ### Save
 
@@ -57,20 +55,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The tester cares about test validity, meaningful coverage, and ensuring the test suite would actually catch regressions in the parallel deliberation path.
+The tester cares about test validity, meaningful coverage, and ensuring the suite would actually catch a regression in config parsing or path derivation.
 
 ### What I flag
 
-- Tests that always pass regardless of implementation — e.g., asserting `result is not None` when the function never returns `None`.
-- Integration tests that mock the LLM: any `patch("anthropic...")` in a test file marked `llm` is a violation of the constitution.
-- Missing escalation path coverage: if no test exercises the case where a member raises an escalation flag, there is no regression safety for that path.
-- Tests that assert on sequential behavior (prior response chaining) that should have been removed or updated.
-- Tests with no assertions or assertions that only check types rather than values.
-- Shared mutable fixture state that makes tests order-dependent.
+- Tests that assert derived paths are "not None" or "is a Path" without checking the actual value — these always pass even if the derivation is wrong.
+- A test for migration-error detection that catches `Exception` too broadly — it must assert specifically on `ValueError` (or whatever the implementation raises) and check that the error message names the offending key.
+- Missing coverage for the `users_dir` property — this is the most important new derived path because `FileStore` depends on it.
+- `test_store.py` tests that mock `open`, `fcntl.flock`, or `pathlib` — these violate the project constraint and do not prove real I/O behavior.
+- Tests that still assert the five removed keys are read from YAML as valid config values — these must be updated to assert the opposite (that they raise an error).
 
 ### Questions I ask
 
-- Would this test fail if I removed the parallel execution logic and fell back to a sequential loop?
-- Is the escalation path tested end-to-end, or only at the flag-detection unit level?
-- Are there any tests that assert `"sequential"` appears somewhere — if so, they need updating to assert `"parallel"` instead?
-- Does the test suite cover the case where one future raises an exception mid-flight during deliberation?
+- If I change `users_dir` to return `data_dir / "wrong_name"`, does a test fail?
+- Does the migration-error test assert the specific key name appears in the error message, or just that any error is raised?
+- Are the `chunks_dir` and `embeddings_dir` derived paths covered by at least one test each?
+- Do all store tests use `tmp_path` with real I/O, and would they fail if `FileStore.user_dir()` returned a wrong path?
