@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
-
 from fastapi import APIRouter
 
 from corpus_council.api.models import (
@@ -24,8 +22,7 @@ async def post_corpus_ingest(request: CorpusIngestRequest) -> CorpusIngestRespon
     validated_path = validate_path_containment(
         config.corpus_dir / request.path, config.corpus_dir, "corpus path"
     )
-    modified_config = dataclasses.replace(config, corpus_dir=validated_path)
-    result = ingest_corpus(modified_config)
+    result = ingest_corpus(config, corpus_dir=validated_path)
     return CorpusIngestResponse(
         chunks_created=result.chunks_created,
         files_processed=result.files_processed,

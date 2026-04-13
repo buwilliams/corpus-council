@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 
 from .config import AppConfig
 
@@ -82,16 +83,24 @@ def _chunk_text(text: str, max_size: int) -> list[tuple[str, int, int]]:
     return chunks
 
 
-def ingest_corpus(config: AppConfig) -> IngestResult:
-    """Ingest all .md and .txt files from config.corpus_dir.
+def ingest_corpus(
+    config: AppConfig, corpus_dir: Path | None = None
+) -> IngestResult:
+    """Ingest all .md and .txt files from corpus_dir (or config.corpus_dir).
 
     Splits each file into text chunks and writes chunk metadata as flat JSON
-    files under config.data_dir / "chunks" / {source_hash} / {chunk_index}.json.
+    files under config.chunks_dir / {source_hash} / {chunk_index}.json.
 
     Idempotent: if all chunk files for a file already exist, skips chunk
     creation but still counts the file in files_processed.
+
+    Args:
+        config: Application configuration.
+        corpus_dir: Override corpus directory. When provided, used instead of
+            config.corpus_dir.
     """
-    chunks_root = config.data_dir / "chunks"
+    resolved_corpus_dir = corpus_dir if corpus_dir is not None else config.corpus_dir
+    chunks_root = config.chunks_dir
     chunks_root.mkdir(parents=True, exist_ok=True)
 
     files_processed = 0
@@ -100,7 +109,7 @@ def ingest_corpus(config: AppConfig) -> IngestResult:
     extensions = {".md", ".txt"}
     source_files = [
         p
-        for p in config.corpus_dir.rglob("*")
+        for p in resolved_corpus_dir.rglob("*")
         if p.is_file() and p.suffix in extensions
     ]
 
@@ -123,7 +132,7 @@ def ingest_corpus(config: AppConfig) -> IngestResult:
 
         # Write chunks that don't exist yet
         hash_dir.mkdir(parents=True, exist_ok=True)
-        relative_path = source_path.relative_to(config.corpus_dir)
+        relative_path = source_path.relative_to(resolved_corpus_dir)
 
         for chunk_index, (chunk_text, char_start, char_end) in enumerate(chunks):
             chunk_file = hash_dir / f"{chunk_index}.json"

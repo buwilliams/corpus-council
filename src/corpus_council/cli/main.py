@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 import uuid
 from pathlib import Path
 
@@ -134,8 +133,7 @@ def ingest(
 ) -> None:
     """Ingest corpus files from the given path."""
     config = _load_config_or_exit()
-    modified_config = dataclasses.replace(config, corpus_dir=Path(path))
-    result = ingest_corpus(modified_config)
+    result = ingest_corpus(config, corpus_dir=Path(path))
     typer.echo(
         f"Processed {result.files_processed} files,"
         f" created {result.chunks_created} chunks."

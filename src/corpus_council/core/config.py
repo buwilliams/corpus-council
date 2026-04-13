@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -15,17 +14,42 @@ class AppConfig:
     embedding_provider: str
     embedding_model: str
     data_dir: Path
-    corpus_dir: Path
-    council_dir: Path
     chunk_max_size: int
     retrieval_top_k: int
     chroma_collection: str = "corpus"
     deliberation_mode: str = "parallel"
-    goals_dir: Path = dataclasses.field(default_factory=lambda: Path("goals"))
-    personas_dir: Path = dataclasses.field(default_factory=lambda: Path("council"))
-    goals_manifest_path: Path = dataclasses.field(
-        default_factory=lambda: Path("goals_manifest.json")
-    )
+
+    @property
+    def corpus_dir(self) -> Path:
+        return self.data_dir / "corpus"
+
+    @property
+    def council_dir(self) -> Path:
+        return self.data_dir / "council"
+
+    @property
+    def goals_dir(self) -> Path:
+        return self.data_dir / "goals"
+
+    @property
+    def personas_dir(self) -> Path:
+        return self.data_dir / "council"
+
+    @property
+    def goals_manifest_path(self) -> Path:
+        return self.data_dir / "goals_manifest.json"
+
+    @property
+    def chunks_dir(self) -> Path:
+        return self.data_dir / "chunks"
+
+    @property
+    def embeddings_dir(self) -> Path:
+        return self.data_dir / "embeddings"
+
+    @property
+    def users_dir(self) -> Path:
+        return self.data_dir / "users"
 
 
 def _resolve_path(config_dir: Path, value: Any) -> Path:
@@ -73,13 +97,32 @@ def _require_dict(data: dict[str, Any], key: str) -> dict[str, Any]:
     return val
 
 
+_REMOVED_KEYS = (
+    "corpus_dir",
+    "council_dir",
+    "goals_dir",
+    "personas_dir",
+    "goals_manifest_path",
+)
+
+_REMOVED_KEY_MESSAGES: dict[str, str] = {
+    "corpus_dir": "the path is now derived as data_dir/corpus/ by convention.",
+    "council_dir": "the path is now derived as data_dir/council/ by convention.",
+    "goals_dir": "the path is now derived as data_dir/goals/ by convention.",
+    "personas_dir": "the path is now derived as data_dir/council/ by convention.",
+    "goals_manifest_path": (
+        "the path is now derived as data_dir/goals_manifest.json by convention."
+    ),
+}
+
+
 def load_config(path: str | Path) -> AppConfig:
     """Load and parse config.yaml, returning a fully typed AppConfig.
 
     Raises:
         FileNotFoundError: if the config file does not exist.
         KeyError: if a required key is absent.
-        ValueError: if a value has the wrong type.
+        ValueError: if a value has the wrong type or a removed key is present.
     """
     config_path = Path(path)
     if not config_path.exists():
@@ -95,6 +138,14 @@ def load_config(path: str | Path) -> AppConfig:
 
     data: dict[str, Any] = raw
     config_dir = config_path.parent.resolve()
+
+    for removed_key in _REMOVED_KEYS:
+        if removed_key in data:
+            raise ValueError(
+                f"Config key {removed_key!r} is no longer supported. "
+                f"Remove it from your config file; "
+                f"{_REMOVED_KEY_MESSAGES[removed_key]}"
+            )
 
     llm_section = _require_dict(data, "llm")
     llm_provider = _require_str(llm_section, "provider")
@@ -131,27 +182,16 @@ def load_config(path: str | Path) -> AppConfig:
         )
     deliberation_mode: str = deliberation_mode_raw
 
-    goals_dir = _resolve_path(config_dir, data.get("goals_dir", "goals"))
-    personas_dir = _resolve_path(config_dir, data.get("personas_dir", "council"))
-    goals_manifest_path = _resolve_path(
-        config_dir, data.get("goals_manifest_path", "goals_manifest.json")
-    )
-
     return AppConfig(
         llm_provider=llm_provider,
         llm_model=llm_model,
         embedding_provider=embedding_provider,
         embedding_model=embedding_model,
         data_dir=_resolve_path(config_dir, data.get("data_dir", "data")),
-        corpus_dir=_resolve_path(config_dir, data.get("corpus_dir", "corpus")),
-        council_dir=_resolve_path(config_dir, data.get("council_dir", "council")),
         chunk_max_size=chunk_max_size,
         retrieval_top_k=retrieval_top_k,
         chroma_collection=chroma_collection,
         deliberation_mode=deliberation_mode,
-        goals_dir=goals_dir,
-        personas_dir=personas_dir,
-        goals_manifest_path=goals_manifest_path,
     )
 
 
