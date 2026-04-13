@@ -4,42 +4,53 @@
 
 ### Role
 
-Reviews API key handling, file I/O safety, input validation, and path traversal risks at all system boundaries touched by the `AppConfig` simplification; confirms that consolidating paths under `data_dir` does not weaken any existing boundary.
+Reviews API key handling, file I/O safety, input validation, and path traversal risks introduced or affected by the prompt template changes and consolidated deliberation parameter additions.
 
 ### Guiding Principles
 
-- `ANTHROPIC_API_KEY` must never be logged, stored to disk, included in error messages, or passed as a function argument beyond the LLM client initialization. The config simplification does not touch LLM key handling, but confirm no refactoring accidentally moves key reads near logging statements.
-- The migration-error messages raised when old config keys are detected must not include the value of the key — only the key name. A deployer's config value could be a sensitive path.
-- All file paths constructed from `data_dir` must remain under `data_dir` — `AppConfig` properties must not allow path components that escape the `data_dir` tree. Since the properties are hardcoded strings (`"corpus"`, `"council"`, etc.), this is structurally safe, but verify no property accepts user input.
-- `FileStore.user_dir()` path traversal protection (`len(user_id) < 4` check) must remain intact after the refactor. Changing `FileStore.__init__` to accept `config.users_dir` instead of another base path must not remove this guard.
-- Config file parsing must reject the five removed keys loudly (`ValueError`) — a deployer who accidentally sets `corpus_dir` to a world-readable path should not have that path silently accepted and used.
-- No new trust boundaries are introduced by this change — `data_dir` is operator-supplied via a config file, which is a trusted input. Do not add subprocess calls or cross-process communication.
+- New parameters (`goal_name`, `goal_description`) passed to LLM calls are trust boundaries — validate that they cannot inject unexpected content into system prompts or template renders.
+- Template files under `src/corpus_council/templates/` are read from disk at render time — confirm there is no path traversal risk if template names are derived from user-controlled input.
+- The position-1 system prompt built from a member's persona file is read from disk — confirm the persona file path is derived from a validated council member index, not from user-supplied input.
+- No new secrets, API keys, or credentials may be introduced or hardcoded.
+- Confirm that the `goal_name` and `goal_description` values are treated as data (template variables), not as executable directives or file paths.
 
 ### Implementation Approach
 
-1. **Audit `src/corpus_council/core/config.py`** after the simplification:
-   - Confirm migration-error messages include the key name but not the key's value.
-   - Confirm `data_dir` is resolved to an absolute path with `.resolve()` — a relative path that "escapes" via `../` would be a path traversal vector if any component were ever derived from user input.
-   - Confirm no `@property` accessor constructs a path from user-controlled input.
-2. **Audit `src/corpus_council/core/store.py`**:
-   - Confirm `FileStore.__init__` signature and `user_dir()` path traversal guard are unchanged.
-   - Confirm `fcntl` locks are still released in `finally` blocks or context managers — a refactor that touches `store.py` must not accidentally remove `finally` clauses.
-3. **Search for new logging** introduced by the config change:
+1. **Review `src/corpus_council/core/consolidated.py`** after changes:
+   - Confirm `goal_name` and `goal_description` are passed as Jinja2 template context variables — they are rendered inside the template, not concatenated into the system prompt string using f-strings or `.format()`.
+   - Confirm the position-1 member is identified by a validated index (e.g., position 0 in the council list), not by matching a user-supplied name.
+   - Confirm the persona file loaded for position-1 is read from a path constructed from the council directory (e.g., `config.council_dir / member_filename`), not from a path derived from user input.
+
+2. **Review `src/corpus_council/core/chat.py`** after changes:
+   - Confirm `goal_name` and `goal_description` sourced from the goal object are strings — not file paths, not shell commands, not executable content.
+   - Confirm they are passed as named keyword arguments, not interpolated directly into prompt strings.
+
+3. **Review template files** after changes:
+   - `member_deliberation.md`, `final_synthesis.md`, `escalation_resolution.md`, `evaluator_consolidated.md` — confirm no new template variables are introduced that could be injected with attacker-controlled content.
+   - Confirm Jinja2 auto-escaping or safe rendering is used consistently if HTML output is possible, or that output is plain text only.
+
+4. **Check for hardcoded secrets**:
+   - Confirm no API keys, tokens, or credentials appear in any modified file.
+   - Confirm no LLM provider URL or model name is hardcoded in Python (must remain in config or templates).
+
+5. **Run the full quality gate**:
    ```
-   grep -r "data_dir\|corpus_dir\|council_dir" src/corpus_council/core/config.py
+   uv run pytest
+   uv run mypy src/
+   uv run ruff check src/
    ```
-   Any log statement that emits a path value is acceptable for debug output; verify it does not emit secret values (API keys, passwords).
-4. **Confirm no path property accepts user input** — all eight derived properties must use hardcoded string literals (`"corpus"`, `"council"`, etc.), not values read from the request or environment.
-5. **Run verification** before declaring done.
 
 ### Verification
 
 ```
-uv run ruff check src/
-uv run mypy src/
 uv run pytest
-grep -r "ANTHROPIC_API_KEY\|api_key" src/  # confirm no logging/storage of key material
+uv run mypy src/
+uv run ruff check src/
 ```
+
+All must exit 0. Additionally verify:
+- `grep -rn "f\"\|\.format(" src/corpus_council/core/consolidated.py` — confirm `goal_name`/`goal_description` are not string-concatenated into prompts; they must go through the template renderer.
+- `grep -rn "api_key\|API_KEY\|secret\|password" src/corpus_council/core/consolidated.py src/corpus_council/core/chat.py` returns nothing new.
 
 ### Save
 
@@ -57,19 +68,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The security-engineer cares about attack surface minimization, path traversal safety, and ensuring that the migration-error messages and derived path properties do not introduce new information leakage or weakened boundaries.
+The security-engineer cares about trust boundaries and injection risks — especially that new string parameters flowing from user-controlled goal data into LLM system prompts do not open prompt injection or path traversal vectors.
 
 ### What I flag
 
-- Migration-error messages that include the value of a removed config key — a deployer's YAML value could contain a sensitive absolute path that should not appear in error output shown to users.
-- `data_dir` not resolved to an absolute path before deriving subdirectory properties — a relative `data_dir` like `../../etc` could yield unexpected paths, though the operator is trusted.
-- The `FileStore.user_dir()` path traversal guard being removed or weakened during the refactor — this is the only user-input-adjacent path construction in the system.
-- `fcntl` locks in `store.py` that lose their `finally` release clauses due to accidental edits during the refactor.
-- Any new `@property` that reads from `os.environ` or request context rather than `self.data_dir` — properties must derive purely from the trusted `data_dir` value.
+- `goal_name` or `goal_description` being concatenated directly into a system prompt string using Python f-strings or `.format()` rather than being passed as Jinja2 template variables — this is a prompt injection surface.
+- The position-1 member identification using a user-supplied name match rather than a fixed index — if an attacker can influence which member is treated as position-1, they can influence which persona system prompt is used.
+- Persona files being loaded from paths that include any user-supplied component — the path must be fully derived from the validated council configuration.
+- New template variables that accept unvalidated user input and render it directly into a system prompt that is sent to the LLM.
+- API keys or model configuration values appearing as literals in the modified Python files rather than loaded from config.
 
 ### Questions I ask
 
-- Do migration-error messages name the offending key without exposing the key's value from the deployer's config file?
-- Is `data_dir` resolved with `.resolve()` in `load_config()` so that derived paths are always absolute and canonical?
-- Is `FileStore.user_dir()`'s `len(user_id) < 4` guard still present and unchanged after the refactor?
-- Are all `fcntl` lock acquisitions in `store.py` paired with `finally: fcntl.flock(f, fcntl.LOCK_UN)` — not accidentally removed by a diff that touches nearby lines?
+- Can a malicious `goal_name` value (e.g., one containing newlines or "Ignore previous instructions") alter the effective behavior of the position-1 system prompt in ways the template author did not intend?
+- Is the position-1 member selection deterministic and based entirely on server-controlled council configuration, with no user-supplied input influencing which persona is loaded?
+- Are `goal_name` and `goal_description` treated as data by the template renderer, meaning they are escaped or sandboxed appropriately?
+- Does the persona file load for position-1 use a path constructed entirely from validated config values, with no user-supplied path components?

@@ -90,17 +90,36 @@ async function loadGoals() {
       opt.textContent = g.name;
       sel.appendChild(opt);
     });
+    // Restore saved goal selection
+    const savedGoal = localStorage.getItem('cc-goal');
+    if (savedGoal && goals.some(g => g.name === savedGoal)) {
+      sel.value = savedGoal;
+    }
   } catch (_err) {
     sel.innerHTML = '<option disabled>No goals available</option>';
   }
+  // Restore saved user ID and mode
+  const savedUserId = localStorage.getItem('cc-user-id');
+  if (savedUserId) document.getElementById('goals-user-id').value = savedUserId;
+  const savedMode = localStorage.getItem('cc-mode');
+  if (savedMode) document.getElementById('goals-mode').value = savedMode;
   refreshConversationList();
 }
 
 // ─── Goals tab ────────────────────────────────────────────────────────────────
 
 function initGoalsTab() {
-  document.getElementById('goal-select').addEventListener('change', refreshConversationList);
-  document.getElementById('goals-user-id').addEventListener('change', refreshConversationList);
+  document.getElementById('goal-select').addEventListener('change', () => {
+    localStorage.setItem('cc-goal', document.getElementById('goal-select').value);
+    refreshConversationList();
+  });
+  document.getElementById('goals-user-id').addEventListener('change', () => {
+    localStorage.setItem('cc-user-id', document.getElementById('goals-user-id').value.trim());
+    refreshConversationList();
+  });
+  document.getElementById('goals-mode').addEventListener('change', () => {
+    localStorage.setItem('cc-mode', document.getElementById('goals-mode').value);
+  });
   document.getElementById('goals-new-conv').addEventListener('click', toggleNewConvForm);
   document.getElementById('goals-submit').addEventListener('click', sendGoalMessage);
 }

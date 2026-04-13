@@ -16,7 +16,7 @@ embedding:
 #   embeddings/   — ChromaDB vector store (written by 'embed')
 #   users/        — user conversation data
 #   goals_manifest.json — goals manifest (written by 'goals process')
-data_dir: data
+data_dir: ../family-technology-advisors/council-content
 
 chunking:
   max_size: 512

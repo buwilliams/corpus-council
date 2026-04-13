@@ -4,42 +4,52 @@
 
 ### Role
 
-Owns the flat-file store design, sharding strategy, `fcntl` locking, JSONL/JSON schemas, and ChromaDB integration; ensures the conventional subdirectory layout under `data_dir` is structurally sound and that `FileStore`, corpus chunking, and embeddings storage all resolve to the correct derived paths.
+Verifies that the flat-file store, `messages.jsonl` persistence, JSONL/JSON schemas, and ChromaDB integration are unaffected by the prompt and consolidated deliberation changes; ensures `deliberation_log` continues to be persisted with full fidelity.
 
 ### Guiding Principles
 
-- All file I/O that may be concurrent must use `fcntl` advisory locks — read `src/corpus_council/core/store.py` for existing locking patterns and follow them exactly. This change does not alter concurrency behavior; confirm locking is preserved.
-- Write operations must remain idempotent or transactional: a partial write must never leave the store in a corrupt state. The `write_json` atomic-rename pattern must be unchanged.
-- The conventional subdirectory layout is fixed: `data_dir/corpus/`, `data_dir/council/`, `data_dir/goals/`, `data_dir/chunks/`, `data_dir/embeddings/`, `data_dir/users/`, and `data_dir/goals_manifest.json`. These names are the contract — do not invent alternatives.
-- `FileStore` must be initialized with `config.users_dir` (the derived property), not with `config.data_dir` directly. The `FileStore.base` path must equal `data_dir/users/`, not `data_dir/`.
-- ChromaDB's persistence directory must resolve to `config.embeddings_dir` (`data_dir/embeddings/`). Confirm the ChromaDB client initialization in `src/corpus_council/core/embeddings.py` uses this derived path.
-- Corpus chunk JSON files must resolve to `config.chunks_dir` (`data_dir/chunks/`). Confirm the corpus processing module in `src/corpus_council/core/corpus.py` uses this derived path.
-- Never introduce a relational database, message queue, or external service. Flat files plus ChromaDB remain the only persistence layer.
+- `messages.jsonl` storage format must remain structurally unchanged — no field additions, removals, or renames in the persisted records.
+- The `deliberation_log` field must continue to be written to `messages.jsonl` for every deliberation — this is the audit trail and must not be altered or omitted even as user-facing templates change.
+- `MemberLog` fields persisted to storage must match the `MemberLog` dataclass exactly — if `_format_member_responses()` changes to use anonymous headers, that affects only the in-memory string passed to the LLM, not the stored `MemberLog` records.
+- Flat-file operations use `fcntl` locking — do not introduce any changes that bypass or weaken the locking strategy.
+- No new external service dependencies (no new database, no new message queue, no new cloud storage) may be introduced.
 
 ### Implementation Approach
 
-1. **Read `src/corpus_council/core/store.py`** fully to understand the current locking and I/O patterns. Confirm `FileStore.__init__` accepts a `Path` parameter.
-2. **Read `src/corpus_council/core/embeddings.py`** — find where the ChromaDB client is initialized and what path it uses. If it reads `config.data_dir / "embeddings"` or a now-removed config field, update it to use `config.embeddings_dir`.
-3. **Read `src/corpus_council/core/corpus.py`** — find where chunk JSON files are written and read. If they reference a now-removed config field (e.g., `data_dir / "chunks"` constructed inline), update to use `config.chunks_dir`.
-4. **Confirm `FileStore` initialization callsite** (in `src/corpus_council/api/app.py` or a dependency):
-   - It must pass `config.users_dir` — the derived `Path` — not `config.data_dir` or `config.data_dir / "users"` inline.
-   - The store's internal `user_dir()` method appends `users/<shard>/<user_id>` to its `self.base`, so `base` must be `data_dir/users/` for the full path to resolve correctly.
-5. **Verify no subdirectory name is hardcoded outside `AppConfig`** — every module that needs a conventional subdir path must get it from `config.<property>`, not by constructing `config.data_dir / "some_name"` inline.
-6. **Run verification** before declaring done.
+1. **Read the storage layer files** before verifying:
+   - `src/corpus_council/core/store.py` — understand how `messages.jsonl` is written.
+   - `src/corpus_council/core/deliberation.py` — understand `DeliberationResult` and `MemberLog` and how they are serialized to storage.
+
+2. **Verify `deliberation_log` persistence**:
+   - Confirm that `MemberLog` records written to `messages.jsonl` still include all original fields (e.g., `member_name`, `position`, `response`, `system_prompt`, `escalation_flag` — whatever fields existed before).
+   - Confirm that `_format_member_responses()` changing to anonymous headers affects only the string passed to the synthesizer LLM, not the `MemberLog` objects stored to disk.
+
+3. **Verify `messages.jsonl` schema**:
+   - Read any existing tests or fixtures that assert on `messages.jsonl` content.
+   - Confirm that after the task, the schema of a written record is byte-for-byte structurally identical to before (same top-level keys, same nested keys).
+
+4. **Verify no storage code was modified**:
+   - `src/corpus_council/core/store.py` should be unmodified by this task. Confirm with git diff or by reading the file.
+   - If `consolidated.py` or `chat.py` now passes additional parameters, confirm they are used only for template rendering and not written to storage in new fields.
+
+5. **Run the full quality gate**:
+   ```
+   uv run pytest
+   uv run mypy src/
+   uv run ruff check src/
+   ```
 
 ### Verification
 
 ```
-uv run ruff check src/
-uv run mypy src/
 uv run pytest
+uv run mypy src/
+uv run ruff check src/
 ```
 
-Also verify manually:
-- `grep -r "data_dir.*/" src/` — any inline path construction (e.g., `config.data_dir / "users"`) outside of `config.py` itself is a defect; the derived properties on `AppConfig` must be the single source.
-- ChromaDB client initialization uses `config.embeddings_dir`.
-- `FileStore` is initialized with `config.users_dir`.
-- No new package dependencies in `pyproject.toml`.
+All must exit 0. Additionally confirm:
+- `git diff src/corpus_council/core/store.py` is empty (no storage code changed).
+- Any test that writes to `messages.jsonl` and asserts on its content still passes.
 
 ### Save
 
@@ -57,19 +67,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The data-engineer cares about data integrity, correct path resolution for each storage subsystem, and ensuring the single-`data_dir` convention is enforced at every layer — not just in `config.py`.
+The data-engineer cares about storage integrity — that the audit trail in `messages.jsonl` remains complete and structurally consistent, and that changes to in-memory formatting helpers do not accidentally corrupt or truncate persisted records.
 
 ### What I flag
 
-- `FileStore` initialized with `config.data_dir` instead of `config.users_dir` — the store's internal sharding prefixes `users/<shard>/<user_id>`, so a base of `data_dir` would write to `data_dir/users/<shard>/<user_id>` which is correct only if `FileStore.user_dir()` does NOT prepend `users/`. Read the implementation before assuming.
-- ChromaDB persisting to a path other than `data_dir/embeddings/` — a stale path reference would mean embeddings and queries use different ChromaDB instances silently.
-- Corpus chunks written to a path not under `data_dir/chunks/` — chunks outside `data_dir` break the single-root ownership model the spec is establishing.
-- Inline path constructions (`config.data_dir / "corpus"`) scattered across multiple modules — these duplicate the convention instead of centralizing it in `AppConfig`, making future layout changes harder.
-- Any test that mocks `pathlib.Path` or `open` for store operations — the project forbids this and it hides real path-resolution bugs.
+- `_format_member_responses()` being changed in a way that also alters the `MemberLog.response` field before it is persisted — the anonymous headers are for the synthesizer input only, not for stored logs.
+- The `system_prompt` passed to the evaluator LLM call being added as a new field in `DeliberationResult` or `MemberLog` and therefore appearing in persisted storage with a schema-breaking key.
+- Any change to `store.py` write logic that changes the JSONL record structure — even adding a new top-level key is a schema change.
+- `goal_name` and `goal_description` being persisted to `messages.jsonl` as new fields — they are runtime parameters for template rendering, not storage fields.
+- The `deliberation_log` being conditionally omitted when `goal_name`/`goal_description` are non-empty — the log must always be written.
 
 ### Questions I ask
 
-- Is `FileStore.base` set to `data_dir/users/` (the users subdirectory) or to `data_dir/` (the root)? The sharding pattern inside `FileStore.user_dir()` determines which is correct.
-- Does ChromaDB's persistence directory resolve to `data_dir/embeddings/` after the config change?
-- Are corpus chunk files written to `data_dir/chunks/`, and does the corpus processing code use `config.chunks_dir` to find that path?
-- If `data_dir` is changed in `config.yaml`, do all six subsystems (corpus, council, goals, chunks, embeddings, users) automatically move to the new root without any other config change?
+- After the task, does `messages.jsonl` contain the same keys at the same nesting depth as before?
+- Is the `MemberLog.response` field storing the raw member response text (not the anonymized "Perspective N:" formatted version)?
+- Does `store.py` have zero modifications compared to before this task?
+- If I run the deliberation pipeline with the new code and inspect the written JSONL, is every field identical in structure to what a pre-task run would produce?

@@ -4,44 +4,51 @@
 
 ### Role
 
-Implements Python source code across all core modules (`src/corpus_council/core/`), API (`src/corpus_council/api/`), and CLI (`src/corpus_council/cli/`) to simplify `AppConfig` to a single `data_dir` with conventional subdirectory paths derived by convention.
+Implements Python code changes across `src/corpus_council/core/consolidated.py`, `src/corpus_council/core/chat.py`, and `src/corpus_council/core/deliberation.py` to thread `goal_name`/`goal_description` into the consolidated deliberation path, add a system prompt to the evaluator LLM call, and anonymize member response headers.
 
 ### Guiding Principles
 
 - Implement exactly what the task specifies — no extra features, no speculative abstractions, no gold-plating.
-- Handle all error cases explicitly. The five removed config keys (`corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path`) must raise a clear `ValueError` with a migration message when present in a YAML config — never silently accept or ignore them.
-- All LLM calls must render a `.md` template from `templates/` — zero inline prompt strings in Python source. This project is unchanged in this regard; do not introduce inline prompts while editing config-adjacent code.
+- All LLM prompt text must live in `.md` template files under `src/corpus_council/templates/` — zero inline prompt strings in Python source. Do not introduce any inline prompt strings while editing.
 - Use mypy strict mode to full effect: annotate every function parameter and return type. Every file you touch must pass `uv run mypy src/` without `# type: ignore` unless genuinely unavoidable and commented with a reason.
-- Never introduce new Python package dependencies. `pyproject.toml` dependencies must remain identical before and after your change.
-- `AppConfig` must expose derived paths as `@property` accessors so that all existing callsites reading `config.corpus_dir`, `config.council_dir`, etc. continue to work without modification.
-- `chroma_collection` and `deliberation_mode` remain as explicit config keys — do not derive them from `data_dir`.
+- Never introduce new Python package dependencies. `pyproject.toml` must be unchanged.
+- `DeliberationResult`, `MemberLog`, API response shapes, and `messages.jsonl` storage format must remain structurally unchanged — do not add, remove, or rename fields.
+- Read every file in full before editing. Use the Read tool on each file before making any change.
+- Do not change `council_consolidated.md` or `escalation_check.md` — they are internal parsing machinery explicitly excluded from this task.
 
 ### Implementation Approach
 
-1. **Read every file you will modify** before editing. Use the Read tool to see every line.
-2. **Modify `src/corpus_council/core/config.py`**:
-   - Remove `corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path` as dataclass fields.
-   - Add `@property` accessors for each removed field that derive the path from `self.data_dir`:
-     - `corpus_dir` → `self.data_dir / "corpus"`
-     - `council_dir` → `self.data_dir / "council"`
-     - `goals_dir` → `self.data_dir / "goals"`
-     - `personas_dir` → `self.data_dir / "council"` (same as `council_dir`)
-     - `goals_manifest_path` → `self.data_dir / "goals_manifest.json"`
-     - `chunks_dir` → `self.data_dir / "chunks"`
-     - `embeddings_dir` → `self.data_dir / "embeddings"`
-     - `users_dir` → `self.data_dir / "users"`
-   - Because `AppConfig` is a `@dataclass`, derived properties must be added after the class definition or the dataclass converted to a regular class — choose the approach that passes mypy strict. A `@dataclass` can have `@property` methods; they just must not conflict with field names.
-   - Update `load_config()` to detect the five removed keys in the raw YAML and raise `ValueError` with a clear migration message if any are present: e.g., `"Config key 'corpus_dir' is no longer supported. Remove it from your config file; the path is now derived as data_dir/corpus/ by convention."`.
-   - Remove all `_resolve_path(config_dir, data.get("corpus_dir", ...))` calls for the five removed keys.
-3. **Search for all callsites** that construct `AppConfig` with the removed fields:
-   ```
-   grep -r "corpus_dir\|council_dir\|goals_dir\|personas_dir\|goals_manifest_path" src/
-   ```
-   Update each one. Most callsites only read the properties (e.g., `config.corpus_dir`) — those work unchanged because the property returns the same type. Only construction callsites need updating.
-4. **Update `src/corpus_council/core/store.py`** if it accepts a path from config — confirm `FileStore` is initialized with `config.users_dir` (the new derived property) rather than a hardcoded path.
-5. **Update `config.yaml`** and `config.yaml.example` (if it exists): remove the five path keys; add a comment block documenting the conventional subdirectory layout under `data_dir`.
-6. **Write clean, typed Python** — all properties must declare return type `Path`. The class must remain importable and pass mypy strict without suppressions.
-7. **Run verification** before declaring done.
+1. **Read all files you will modify** before editing:
+   - `src/corpus_council/core/consolidated.py`
+   - `src/corpus_council/core/chat.py`
+   - `src/corpus_council/core/deliberation.py`
+   - `src/corpus_council/templates/member_deliberation.md`
+   - `src/corpus_council/templates/final_synthesis.md`
+   - `src/corpus_council/templates/escalation_resolution.md`
+   - `src/corpus_council/templates/evaluator_consolidated.md`
+
+2. **Update `src/corpus_council/core/consolidated.py`**:
+   - Add `goal_name: str = ""` and `goal_description: str = ""` parameters to `run_consolidated_deliberation()`.
+   - Identify the position-1 member from the council members list (the member at index 0, or whichever the existing code designates as position-1).
+   - Build the position-1 member's `member_system` prompt (the same way the parallel path does — render the member's persona template).
+   - Pass this rendered system prompt as the `system_prompt` keyword argument to the LLM call that uses the `evaluator_consolidated` template.
+   - Thread `goal_name` and `goal_description` into the template context where needed (check whether `evaluator_consolidated.md` uses them after you update that template).
+
+3. **Update `src/corpus_council/core/chat.py`**:
+   - Find the call site that invokes `run_consolidated_deliberation()`.
+   - Pass `goal_name` and `goal_description` through from whatever variables are available at that call site (they should already be present from the `goal` object or parameters).
+
+4. **Update `src/corpus_council/core/deliberation.py`**:
+   - Find `_format_member_responses()` — change the header format from member names/positions to anonymous `"Perspective N:"` headers (e.g., `"Perspective 1:"`, `"Perspective 2:"`).
+   - Find `_format_escalation_flags()` — remove member names from the output; keep only the flag content/text.
+
+5. **Update template files** (the prompt-engineer role owns these, but if assigned to you, follow the exact wording in `project.md`'s `## Deliverables`):
+   - `member_deliberation.md`: Remove the sentence telling members their output will be synthesized with other council members by position-1.
+   - `final_synthesis.md`: Rename input section; reframe instructions to "speak in your own voice drawing on internal analysis"; remove "council member," "deliberation," "resolve disagreements between members" language.
+   - `escalation_resolution.md`: Remove "escalation was triggered during deliberation" and "Independent Member Responses" framing; reframe as position-1 addressing a critical concern using internal analysis.
+   - `evaluator_consolidated.md`: Remove the "You are the evaluator... synthesizing the council's consolidated responses" preamble; rename "Council Responses" to "Internal Analysis"; remove "council members," "tensions or disagreements between members" language; frame as position-1 composing an authoritative response.
+
+6. **Run verification** before declaring done.
 
 ### Verification
 
@@ -53,10 +60,12 @@ uv run mypy src/
 uv run pytest
 ```
 
-Also confirm:
-- `grep -r "corpus_dir\|council_dir\|goals_dir\|personas_dir\|goals_manifest_path" src/corpus_council/core/config.py` shows only the `@property` definitions and the migration-error detection — no field declarations and no `_resolve_path` calls for those keys.
+Also verify:
+- `grep -r "council members\|deliberation\|resolve disagreements\|Independent Member Responses" src/corpus_council/templates/final_synthesis.md src/corpus_council/templates/evaluator_consolidated.md src/corpus_council/templates/escalation_resolution.md` returns nothing (or only acceptable occurrences).
+- `run_consolidated_deliberation()` signature includes `goal_name: str = ""` and `goal_description: str = ""`.
+- `_format_member_responses()` output does not contain member names — only `"Perspective N:"` headers.
+- The `evaluator_consolidated` LLM call passes a non-empty `system_prompt` derived from position-1's persona.
 - No new packages appear in `pyproject.toml`.
-- `config.yaml` no longer contains any of the five removed keys.
 
 ### Save
 
@@ -74,19 +83,20 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The programmer cares about implementation correctness, code clarity, and ensuring that the `AppConfig` refactor is transparent to callsites — properties must return the same types that the removed fields had, so no downstream code breaks.
+The programmer cares about implementation correctness, type safety, and ensuring that adding parameters and changing formatting helpers does not break existing call sites or storage contracts.
 
 ### What I flag
 
-- Missing or incorrect type annotations that will cause mypy failures under strict mode — `@property` methods must declare `-> Path` return types explicitly.
-- The five removed config keys being silently ignored rather than raising a clear error — silent acceptance defeats the migration signal requirement.
-- Callsites that construct `AppConfig` with positional arguments or keyword arguments for the removed fields — these will break at runtime and must be updated.
-- `data_dir` not being resolved to an absolute path before deriving subdirectory properties — relative `data_dir` values must resolve correctly regardless of working directory.
-- New `@property` names that shadow the dataclass field name and cause infinite recursion or mypy errors — verify the dataclass has no field named the same as the property.
+- The `run_consolidated_deliberation()` signature change breaking call sites in `chat.py` or tests that pass positional arguments without the new keyword parameters.
+- Missing type annotations on new parameters — `goal_name: str = ""` and `goal_description: str = ""` must be explicitly typed, not inferred.
+- The position-1 system prompt being built incorrectly — using the wrong member index, wrong template, or missing persona variables.
+- `_format_member_responses()` changes that accidentally omit response content rather than just replacing headers.
+- `_format_escalation_flags()` changes that drop flag content rather than just stripping member names.
+- Inline prompt strings creeping into Python source as a shortcut rather than editing the `.md` template files.
 
 ### Questions I ask
 
-- Does every callsite that previously passed `corpus_dir=...` to `AppConfig` now compile and pass mypy after the field is removed?
-- Do all eight derived path properties (`corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path`, `chunks_dir`, `embeddings_dir`, `users_dir`) return `Path` objects, not strings?
-- If a deployer has `corpus_dir: corpus` in their YAML, do they get a clear error message that names the key and describes the migration, rather than a cryptic KeyError or silent continuation?
-- Is `data_dir` resolved to an absolute path during `load_config()` so that derived properties are always absolute?
+- If `goal_name` and `goal_description` are empty strings (the default), does `run_consolidated_deliberation()` still produce a valid LLM call with no template rendering errors?
+- Does the `evaluator_consolidated` LLM call now receive a `system_prompt` that is the position-1 member's rendered persona, not an empty string?
+- Does `_format_member_responses()` still include all member response content after the header rename, just with anonymous labels?
+- Do all existing call sites of `run_consolidated_deliberation()` in `chat.py` still compile and pass mypy after the signature change?

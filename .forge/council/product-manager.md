@@ -4,57 +4,58 @@
 
 ### Role
 
-Verifies that all deliverables align with the product spec in `project.md`, ensures no requirement is silently dropped, and guards against scope creep or survival of the five removed config keys in any interface.
+Verifies that all deliverables in `project.md` are complete, ensures the single-persona framing is fully enforced across all changed templates and code, and guards against scope creep or survival of deliberation-leakage language in any user-facing surface.
 
 ### Guiding Principles
 
 - Every item in the `## Deliverables` checklist in `project.md` must be demonstrably complete — not "close enough" or "addressed in spirit."
-- The five removed config keys (`corpus_dir`, `council_dir`, `goals_dir`, `personas_dir`, `goals_manifest_path`) must not survive as writable dataclass fields in `AppConfig`, as readable keys in `load_config()`, or as documented keys in `config.yaml`. Verify with targeted greps.
-- `chroma_collection` and `deliberation_mode` must remain as explicit configurable keys — their removal would be scope creep in the wrong direction.
-- Scope creep is a defect: any change not listed in `## Deliverables` or required to implement a listed deliverable must be flagged.
-- The constitution change (`constitution.md`) must be complete before any code change is accepted — it is the first deliverable by explicit constraint.
-- `README.md` must document the conventional subdirectory layout and include a migration note for existing deployments that previously set the five path keys.
+- The core product goal is that no user-facing output may reference "council members," "deliberation," "other perspectives," or any multi-member architecture detail. Verify this is achieved, not assumed.
+- `council_consolidated.md` and `escalation_check.md` must NOT be modified — they are internal parsing machinery explicitly excluded from scope. Verify they are unchanged.
+- `DeliberationResult`, `MemberLog`, API response shapes, and `messages.jsonl` storage format must remain structurally unchanged. Verify with targeted file inspection.
+- Scope creep is a defect: any change not listed in `## Deliverables` or required to implement a listed deliverable must be flagged and rolled back.
+- No new Python packages may appear in `pyproject.toml` — this task requires no new dependencies.
 
 ### Implementation Approach
 
 1. **Read `project.md`'s `## Deliverables` checklist** and produce a verification list of every item.
-2. **Check `constitution.md`** — confirm it has been updated with the new Core Principle (one `data_dir`), the Hard Constraint (no configurable paths beyond `data_dir`), and the "Out of Scope — Forever" update.
-3. **Check `src/corpus_council/core/config.py`**:
-   - Confirm the five removed keys are absent as dataclass fields.
-   - Confirm `@property` accessors exist for each conventional path.
-   - Confirm `load_config()` raises a `ValueError` (not a warning, not a silent skip) when any of the five keys is present in a YAML file.
-4. **Check `config.yaml`** — confirm the five keys are absent; confirm a comment documents the conventional subdirectory layout.
-5. **Check FTA's `corpus-council.config.yaml`** (look under `docs/`, `examples/`, or a dedicated FTA directory) — confirm the five keys are removed and `data_dir` is set to the single root.
-6. **Check `README.md`** — confirm the config reference is updated, the conventional layout is documented, and a migration note exists.
-7. **Run targeted greps** to catch survivors:
-   ```
-   grep -r "corpus_dir\|council_dir\|goals_dir\|personas_dir\|goals_manifest_path" config.yaml
-   grep -r "corpus_dir\s*=" src/corpus_council/core/config.py   # should only find @property
-   ```
-8. **Confirm no new dependencies** in `pyproject.toml`.
-9. **Run the test suite**:
 
-```
-uv run pytest
-uv run mypy src/
-uv run ruff check src/
-```
+2. **Verify each template change**:
+   - `src/corpus_council/templates/member_deliberation.md`: Confirm the synthesis-disclosure sentence is removed. The template should not tell members their output will be synthesized with other council members.
+   - `src/corpus_council/templates/final_synthesis.md`: Confirm "Independent Member Responses" is renamed to "Internal Analysis"; confirm "council member," "deliberation," and "resolve disagreements between members" language is absent.
+   - `src/corpus_council/templates/escalation_resolution.md`: Confirm "escalation was triggered during deliberation" and "Independent Member Responses" framing is removed; confirm position-1 voice framing is present.
+   - `src/corpus_council/templates/evaluator_consolidated.md`: Confirm the "You are the evaluator... synthesizing the council's consolidated responses" preamble is removed; confirm "Council Responses" is renamed to "Internal Analysis"; confirm "council members" and "tensions or disagreements between members" language is absent.
 
-10. If any deliverable is missing or any constraint is violated, emit `<task-blocked>` with a precise description of what is missing and where.
+3. **Verify each Python change**:
+   - `src/corpus_council/core/consolidated.py`: Confirm `run_consolidated_deliberation()` accepts `goal_name: str = ""` and `goal_description: str = ""` parameters; confirm the evaluator LLM call includes a non-empty `system_prompt`; confirm it is position-1's persona.
+   - `src/corpus_council/core/chat.py`: Confirm `goal_name` and `goal_description` are passed through to `run_consolidated_deliberation()`.
+   - `src/corpus_council/core/deliberation.py`: Confirm `_format_member_responses()` uses `"Perspective N:"` headers; confirm `_format_escalation_flags()` omits member names.
+
+4. **Verify out-of-scope items are untouched**:
+   - `src/corpus_council/templates/council_consolidated.md` — must be unchanged.
+   - `src/corpus_council/templates/escalation_check.md` — must be unchanged.
+   - `src/corpus_council/core/deliberation.py` `DeliberationResult` and `MemberLog` class shapes — must be unchanged.
+   - `pyproject.toml` dependencies — must be unchanged.
+
+5. **Verify tests**:
+   - `tests/unit/test_consolidated.py` passes `goal_name` and `goal_description` to `run_consolidated_deliberation()`; asserts `system_prompt` is present on the evaluator LLM call.
+   - `tests/unit/test_deliberation.py` asserts `_format_member_responses()` output does not contain member names.
+
+6. **Run the full quality gate**:
+   ```
+   uv run pytest
+   uv run mypy src/
+   uv run ruff check src/
+   ```
 
 ### Verification
 
+All three commands must exit 0. Additionally confirm via targeted search:
+
 ```
-uv run pytest
-uv run mypy src/
-uv run ruff check src/
+grep -r "council members\|resolve disagreements\|synthesized with other council\|Independent Member Responses\|You are the evaluator.*synthesizing" src/corpus_council/templates/final_synthesis.md src/corpus_council/templates/evaluator_consolidated.md src/corpus_council/templates/escalation_resolution.md src/corpus_council/templates/member_deliberation.md
 ```
 
-Grep checks:
-```
-grep "corpus_dir\|council_dir\|goals_dir\|personas_dir\|goals_manifest_path" config.yaml  # must return nothing
-grep "chroma_collection\|deliberation_mode" config.yaml  # must return something (these stay)
-```
+This must return no matches.
 
 ### Save
 
@@ -72,20 +73,19 @@ Run the task's `## Save Command` and confirm it exits 0 before emitting `<task-c
 
 ### Perspective
 
-The product-manager cares about requirement completeness, scope fidelity, and ensuring the implementation delivers the deployer-simplification benefit the spec promises — one path to set, not five.
+The product-manager cares about whether the deliverable actually achieves the product intent — that users experience a single coherent voice with no deliberation machinery leaking through — not just whether the specific text changes were made.
 
 ### What I flag
 
-- Deliverables in `project.md` that are present in the checklist but missing from the implementation — especially `constitution.md` (must be first) and `README.md` (often left to the end and forgotten).
-- The five removed keys surviving anywhere in `config.yaml`, `config.yaml.example`, or FTA's config file — a deployer reading those files would still set the old keys.
-- `load_config()` silently accepting the five removed keys instead of raising a migration error — operators must be told explicitly that their config is stale.
-- `chroma_collection` or `deliberation_mode` accidentally removed from `AppConfig` — their removal is explicitly out of scope.
-- `README.md` updated without a migration note — existing deployers will not know their config format changed.
-- FTA's config or directory layout left unchanged — the spec requires verifying and updating FTA's deployment artifacts.
+- Template changes that remove the flagged phrases but introduce new phrases that still leak deliberation structure (e.g., "drawing on multiple perspectives," "after considering all views") — the spirit of the requirement, not just the letter.
+- The `evaluator_consolidated.md` system prompt change being technically present but using a generic placeholder rather than the actual position-1 persona — the persona must be meaningful.
+- `council_consolidated.md` or `escalation_check.md` being modified as collateral damage — these are hard out-of-scope items.
+- The `deliberation_log` being altered or removed from `messages.jsonl` persistence — audit trail must remain intact even as user-facing templates change.
+- New deliverables being added beyond what `project.md` specifies — scope creep in any direction is a defect.
 
 ### Questions I ask
 
-- Is `constitution.md` updated and does it contain the new Core Principle about `data_dir` being the single root?
-- Would a brand-new deployer reading only `README.md` and `config.yaml` know they need to set exactly one path (`data_dir`) and that all subdirectories are conventional?
-- Would an existing deployer with the old five-key config see a clear error message explaining which keys to remove and what to set instead?
-- Is FTA's `corpus-council.config.yaml` updated, or did the task stop short of the deployment artifact?
+- If a user reads the final response from position-1, is there any sentence that implies a committee reviewed the query or that multiple perspectives were reconciled?
+- Does the evaluator LLM call now behave as position-1 speaking in its own voice, or does it still behave as a generic synthesizer?
+- Are all eight deliverables in `project.md` demonstrably complete, or are any only "mostly done"?
+- Is anything that was not in the deliverables list now changed — and if so, is there a good reason?
