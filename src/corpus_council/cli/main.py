@@ -61,7 +61,7 @@ def chat(
         None, "--session", help="Existing conversation ID to resume"
     ),
     mode: str | None = typer.Option(
-        None, "--mode", help="Deliberation mode: sequential or consolidated"
+        None, "--mode", help="Deliberation mode: parallel or consolidated"
     ),
 ) -> None:
     """Start an interactive chat session."""
@@ -83,9 +83,9 @@ def chat(
 
     config = _load_config_or_exit()
     resolved_mode: str = mode or config.deliberation_mode
-    if mode is not None and mode not in {"sequential", "consolidated"}:
+    if mode is not None and mode not in {"parallel", "consolidated"}:
         typer.echo(
-            f"Error: --mode must be 'sequential' or 'consolidated', got {mode!r}",
+            f"Error: --mode must be 'parallel' or 'consolidated', got {mode!r}",
             err=True,
         )
         raise typer.Exit(1)

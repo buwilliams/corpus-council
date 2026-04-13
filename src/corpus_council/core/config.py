@@ -22,7 +22,7 @@ class AppConfig:
     chunk_max_size: int
     retrieval_top_k: int
     chroma_collection: str = "corpus"
-    deliberation_mode: str = "sequential"
+    deliberation_mode: str = "parallel"
     goals_dir: Path = dataclasses.field(default_factory=lambda: Path("goals"))
     personas_dir: Path = dataclasses.field(default_factory=lambda: Path("council"))
     goals_manifest_path: Path = dataclasses.field(
@@ -120,15 +120,15 @@ def load_config(path: str | Path) -> AppConfig:
         )
     chroma_collection: str = chroma_collection_raw
 
-    deliberation_mode_raw = data.get("deliberation_mode", "sequential")
+    deliberation_mode_raw = data.get("deliberation_mode", "parallel")
     if not isinstance(deliberation_mode_raw, str):
         raw_dm_type = type(deliberation_mode_raw).__name__
         raise ValueError(
             f"Config key 'deliberation_mode' must be a string, got {raw_dm_type!r}"
         )
-    if deliberation_mode_raw not in {"sequential", "consolidated"}:
+    if deliberation_mode_raw not in {"parallel", "consolidated"}:
         raise ValueError(
-            f"Config key 'deliberation_mode' must be 'sequential' or 'consolidated', "
+            f"Config key 'deliberation_mode' must be 'parallel' or 'consolidated', "
             f"got {deliberation_mode_raw!r}"
         )
     deliberation_mode: str = deliberation_mode_raw
