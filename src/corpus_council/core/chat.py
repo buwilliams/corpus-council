@@ -21,7 +21,7 @@ def run_goal_chat(
     config: AppConfig,
     store: FileStore,
     llm: LLMClient,
-    mode: str = "sequential",
+    mode: str = "parallel",
 ) -> tuple[str, str]:
     """Load goal, retrieve corpus chunks, run deliberation, persist turn, and return.
 
@@ -60,11 +60,31 @@ def run_goal_chat(
             "last_updated": "",
         }
 
+    # 4b. Build conversation history from prior turns
+    prior_turns = store.read_goal_messages(user_id, goal_name, conversation_id)
+    history_parts: list[str] = []
+    for turn in prior_turns:
+        user_msg = turn.get("user_message", "")
+        assistant_msg = turn.get("final_response", "")
+        if user_msg:
+            history_parts.append(f"User: {user_msg}")
+        if assistant_msg:
+            history_parts.append(f"Assistant: {assistant_msg}")
+    conversation_history = "\n".join(history_parts)
+
     # 5. Run deliberation
     if mode == "consolidated":
         result = run_consolidated_deliberation(message, chunks, members, llm)
     else:
-        result = run_deliberation(message, chunks, members, llm)
+        result = run_deliberation(
+            message,
+            chunks,
+            members,
+            llm,
+            conversation_history=conversation_history,
+            goal_name=goal_name,
+            goal_description=goal_config.desired_outcome,
+        )
 
     # 6. Increment turn count
     turn_count: int = int(context.get("turn_count", 0)) + 1
